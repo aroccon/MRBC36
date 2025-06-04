@@ -1,4 +1,4 @@
-## VALKYRJA36
+## NEMESI36
 2D code for PFM simulations (WIP)
 
 
