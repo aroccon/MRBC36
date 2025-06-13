@@ -72,7 +72,7 @@ if (status.ne.0) stop "cufftExecD2Z failed"
 status = cufftExecZ2D(planb, rhspc, rhsp)
 if (status.ne.0) stop "cufftExecZ2D failed"
 
-rhsp=rhsp/nx
+!rhsp=rhsp/nx
 
 
 ! write out field
