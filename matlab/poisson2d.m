@@ -34,6 +34,8 @@ f_hat = fft(f, [], 1);  % size: (nx, ny)
 kx = [0:nx/2 -nx/2+1:-1] * (2*pi / Lx);
 kx2 = kx.^2;
 
+return
+
 % Build 2nd-order FD matrix with Neumann BCs in y
 Ay = zeros(ny, ny);
 for j = 2:ny-1
@@ -41,8 +43,10 @@ for j = 2:ny-1
     Ay(j,j)   = -2;
     Ay(j,j+1) = 1;
 end
-Ay(1,1) = -2; Ay(1,2) = 2;           % Neumann BC at y=0
-Ay(ny,ny) = -2; Ay(ny,ny-1) = 2;     % Neumann BC at y=Ly
+Ay(1,1) = -2; 
+Ay(1,2) = 2;           % Neumann BC at y=0
+Ay(ny,ny) = -2; 
+Ay(ny,ny-1) = 2;     % Neumann BC at y=Ly
 Ay = Ay / dy^2;
 I = eye(ny);
 

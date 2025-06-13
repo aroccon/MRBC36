@@ -9,17 +9,21 @@ integer, parameter :: nx=64, ny=64
 double precision, parameter :: pi=3.141592653589793d0
 double precision :: dx, dy, lx, ly, acoeff
 integer :: i, j, k, n, m
-double precision, allocatable :: x(:), y(:)
+double precision, allocatable :: x(:), y(:), kx(:), kx2(:)
 double precision, allocatable :: rhsp(:,:),  p(:,:), pext(:,:)
 double complex, allocatable :: rhspc(:,:)
+double precision, alloctable :: a(:), b(:), c(:), d(:), sol(:)
 
 ! cufft plans
 integer :: planf, planb, status
 
 
 allocate(x(nx),y(ny))
-allocate(rhsp(nx,ny),pext(nx,ny))
+allocate(rhsp(nx,ny),p(nx,ny),pext(nx,ny))
 allocate(rhspc(nx/2+1,ny))
+allocate(kx(nx/2+1))
+allocate(kx2(nx/2+1))
+allocate(a(ny),b(ny),c(ny),d(ny),sol(ny))
 
 ! Define domain size
 lx = 2.d0*pi
@@ -68,11 +72,51 @@ close(55)
 status = cufftExecD2Z(planf, rhsp, rhspc)
 if (status.ne.0) stop "cufftExecD2Z failed"
 
-! === Execute Backward FFT ===
-status = cufftExecZ2D(planb, rhspc, rhsp)
-if (status.ne.0) stop "cufftExecZ2D failed"
 
-!rhsp=rhsp/nx
+! Arrays a, b, c, d represent the sub-diagonal, diagonal, super-diagonal, and RHS vectors respectively.
+! Solve for each Fourier mode kx
+do i=1,nx/2+1
+  kx = 2.0*pi*(k-1)/Lx
+
+  ! Setup tridiagonal system for y
+  do j=1,ny
+    a(j) = -1.0
+    b(j) = 2.0 + kx2(i)*dy*dy
+    c(j) = -1.0
+    d(j) = dy*dy*real(rhspc(i,j))
+  end do
+
+  ! Modify for Neumann BC at boundaries
+  b(1) = 1.0
+  c(1) = -1.0
+  d(1) = 0.0
+
+  a(ny) = -1.0
+  b(ny) = 1.0
+  d(ny) = 0.0
+
+  ! ==TDMA forward elimination ---
+  do j=2,ny
+    q = a(j)/b(j-1)
+    b(j) = b(j) - q*c(j-1)
+    d(j) = d(j) - q*d(j-1)
+  end do
+
+  ! == TDMA Back substitution ---
+  sol(ny) = d(ny)/b(ny)
+  do j=ny-1,1,-1
+    sol(j) = (d(j) - c(j)*sol(j+1))/b(j)
+  end do
+
+  ! Store solution in spectral space
+  do j=1,ny
+    pc(i,j) = cmplx(sol(j), 0.0)
+  end do
+end do
+
+! === Execute Backward FFT ===
+status = cufftExecZ2D(planb, pc, p)
+if (status.ne.0) stop "cufftExecZ2D failed"
 
 
 ! write out field
@@ -81,6 +125,8 @@ write(55) rhsp(:,:)
 close(55)
 
 deallocate(x,y)
+deallocate(a,b,c,d,sol)
+deallocate(kx,kx2)
 deallocate(rhsp,p,pext,rhspc)
 
 end program main
