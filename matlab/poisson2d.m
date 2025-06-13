@@ -1,98 +1,80 @@
+clear; close all; clc
+
 % Parameters
-Nx = 128;
-Ny = 128;
-Lx = 2 * pi;
+nx = 128;
+ny = nx;
+Lx = 2*pi;
 Ly = 1.0;
-dx = Lx/(Nx-1);
-dy = Ly/(Ny - 1);
-x = (0:Nx-1) * dx;
-y = (0:Ny-1) * dy;
-[X, Y] = meshgrid(x, y);
+dx = Lx / nx;
+dy = Ly / (ny - 1);
 
-% Define RHS
-f = sin(X) .* cos(pi * Y / Ly);
+x = (0:nx-1) * dx;
+y = linspace(0, Ly, ny);
 
-% Analytical solution
-A = -1 / (1 + (pi / Ly)^2);
-u_exact = A * sin(X) .* cos(pi * Y / Ly);
+n = 2;
+m = 2;
 
-% FFT in x-direction
-f_hat = fft(f, [], 2);
+% Allocate arrays in (x,y) layout
+f        = zeros(nx, ny);   % f(i,j): x along rows, y along columns
+u_exact  = zeros(nx, ny);
 
-% Wavenumbers squared
-kx = [0:Nx/2 -Nx/2+1:-1] * (2*pi/Lx);
+% Coefficient from analytical solution
+A_coef = -1 / (n^2 + (2*pi*m/Ly)^2);
+
+% Fill RHS and exact solution without meshgrid
+for i = 1:nx
+    for j = 1:ny
+        f(i,j) = sin(n * x(i)) * cos(2*pi*m * y(j) / Ly);
+        u_exact(i,j) = A_coef * sin(n * x(i)) * cos(2*pi*m * y(j) / Ly);
+    end
+end
+
+% FFT in x-direction (along rows)
+f_hat = fft(f, [], 1);  % size: (nx, ny)
+kx = [0:nx/2 -nx/2+1:-1] * (2*pi / Lx);
 kx2 = kx.^2;
 
-% Build finite difference matrix with Neumann BCs (Ny x Ny)
-A = zeros(Ny, Ny);
-for j = 2:Ny-1
-    A(j, j-1) = 1;
-    A(j, j)   = -2;
-    A(j, j+1) = 1;
+% Build 2nd-order FD matrix with Neumann BCs in y
+Ay = zeros(ny, ny);
+for j = 2:ny-1
+    Ay(j,j-1) = 1;
+    Ay(j,j)   = -2;
+    Ay(j,j+1) = 1;
 end
-A(1,1) = -2; 
-A(1,2) = 2;
-A(Ny,Ny-1) = 2; 
-A(Ny,Ny) = -2;
-A = A / dy^2;
-
-% Identity matrix
-I = eye(Ny);
+Ay(1,1) = -2; Ay(1,2) = 2;           % Neumann BC at y=0
+Ay(ny,ny) = -2; Ay(ny,ny-1) = 2;     % Neumann BC at y=Ly
+Ay = Ay / dy^2;
+I = eye(ny);
 
 % Solve for each Fourier mode
-u_hat = zeros(Ny, Nx);
-for i = 1:Nx
-    % System matrix for this mode
-    L = A - kx2(i) * I;
+u_hat = zeros(nx, ny);
+for i = 1:nx
+    L = Ay - kx2(i) * I;
+    rhs = squeeze(f_hat(i,:))';  % size (ny, 1)
 
-    % Right-hand side
-    rhs = f_hat(:,i); 
-
-    % Handle the singular kx = 0 mode separately
     if kx2(i) == 0
-        % Set mean to zero or remove null space
         L(1,:) = 0;
         L(1,1) = 1;
         rhs(1) = 0;
     end
 
-    % Gaussian elimination (basic implementation)
-    % Forward elimination
-    for k = 1:Ny-1
-        if abs(L(k,k)) < 1e-14
-            error('Pivot too small at row %d, matrix may be singular', k);
-        end
-        factor = L(k+1,k) / L(k,k);
-        L(k+1,k:end) = L(k+1,k:end) - factor * L(k,k:end);
-        rhs(k+1) = rhs(k+1) - factor * rhs(k);
-    end
-
-    % Back substitution
-    u_col = zeros(Ny,1);
-    u_col(Ny) = rhs(Ny) / L(Ny,Ny);
-    for k = Ny-1:-1:1
-        u_col(k) = (rhs(k) - L(k,k+1:end) * u_col(k+1:end)) / L(k,k);
-    end
-
-    % Store result
-    u_hat(:,i) = u_col;
+    u_hat(i,:) = (L \ rhs)';
 end
 
-% Inverse FFT to get solution
-u = real(ifft(u_hat, [], 2));
+% Inverse FFT in x (along rows)
+u = real(ifft(u_hat, [], 1));
 
-error = max(abs(u(:) - u_exact(:)), [], 'all');
-disp(['Max error: ', num2str(error)]);
+% Compute L2 error (interior only)
+err = u - u_exact;
+L2 = sqrt(sum(err(:,2:ny-1).^2, 'all') / (nx * (ny-2)));
+disp(['L2 error: ', num2str(L2)]);
 
-
-% Plot
-figure(1)
+% Plot results
+figure
 subplot(1,2,1)
-contourf(X, Y, u, 'EdgeColor', 'none');
-xlabel('x'); 
-ylabel('y'); 
+contourf(x, y, u', 30, 'EdgeColor', 'none'); 
+title('Numerical'); xlabel('x'); ylabel('y');
 
 subplot(1,2,2)
-contourf(X, Y, u_exact, 'EdgeColor', 'none');
-xlabel('x'); 
-ylabel('y'); 
+contourf(x, y, u_exact', 30, 'EdgeColor', 'none'); 
+title('Analytical'); xlabel('x'); ylabel('y');
