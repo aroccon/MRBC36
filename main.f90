@@ -11,8 +11,8 @@ double precision :: dx, dy, lx, ly, acoeff
 integer :: i, j, k, n, m
 double precision, allocatable :: x(:), y(:), kx(:), kx2(:)
 double precision, allocatable :: rhsp(:,:),  p(:,:), pext(:,:)
-double complex, allocatable :: rhspc(:,:)
-double precision, alloctable :: a(:), b(:), c(:), d(:), sol(:)
+double complex, allocatable :: rhspc(:,:),pc(:,:)
+double precision, allocatable :: a(:), b(:), c(:), d(:), sol(:)
 
 ! cufft plans
 integer :: planf, planb, status
@@ -20,7 +20,7 @@ integer :: planf, planb, status
 
 allocate(x(nx),y(ny))
 allocate(rhsp(nx,ny),p(nx,ny),pext(nx,ny))
-allocate(rhspc(nx/2+1,ny))
+allocate(rhspc(nx/2+1,ny),pc(nx/2+1,ny))
 allocate(kx(nx/2+1))
 allocate(kx2(nx/2+1))
 allocate(a(ny),b(ny),c(ny),d(ny),sol(ny))
@@ -110,7 +110,7 @@ do i=1,nx/2+1
 
   ! Store solution in spectral space
   do j=1,ny
-    pc(i,j) = cmplx(sol(j), 0.0)
+    pc(i,j) = dcmplx(sol(j), 0.0d0)
   end do
 end do
 
@@ -118,10 +118,9 @@ end do
 status = cufftExecZ2D(planb, pc, p)
 if (status.ne.0) stop "cufftExecZ2D failed"
 
-
 ! write out field
 open(unit=55,file='out.dat',form='unformatted',position='append',access='stream',status='new')
-write(55) rhsp(:,:)
+write(55) p(:,:)
 close(55)
 
 deallocate(x,y)
