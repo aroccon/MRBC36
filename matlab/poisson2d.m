@@ -1,7 +1,7 @@
 clear; close all; clc
 
 % Parameters
-nx = 128;
+nx = 64;
 ny = nx;
 Lx = 2*pi;
 Ly = 1.0;
