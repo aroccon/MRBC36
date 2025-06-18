@@ -10,3 +10,4 @@
 - Poisson solver (Fortran: FFT forth and back) ✅
 - Poisson solver (Fortran) ✅
 - Added support for stretched nodes along z (Matlab only, easy to move in Fortan) ✅
+- Introduced phi ✅ 
