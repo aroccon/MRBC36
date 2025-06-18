@@ -1,18 +1,20 @@
 clear; clc; close all
 
 % Parameters
-nx = 64;
+nx = 128;
 ny = nx;
 Lx = 2*pi;
 Ly = 1.0;
 dx = Lx / nx;
-dy = Ly / (ny - 1);
-dyi=1/dy;
 x = (0:nx-1)*dx;
-y = linspace(0, Ly, ny);
+eta = linspace(-1, 1, ny); 
+beta=0.3;
+%y = 0.5*(1 + tanh(beta * eta)/tanh(beta)); 
+y = linspace(0, 1, ny);
 
 n = 1;
 m = 2;
+
 
 % Exact solution and RHS
 A_coef  = -1 / (n^2 + (2*pi*m/Ly)^2);
@@ -47,22 +49,28 @@ for i = 1:nx/2+1
     c = zeros(ny,1);
     d = zeros(ny,1);
     
-    for j = 1:ny
-        a(j) =  1.0 * dyi^2;
-        b(j) = -2.0 * dyi^2 - kx2(i);
-        c(j) =  1.0 * dyi^2;
+    for j = 2:ny-1
+        dy1 = y(j) - y(j-1);
+        dy2 = y(j+1) - y(j);
+        a(j) = 2/(dy1*(dy1+dy2));
+        b(j) = -2/(dy1*dy2) - kx2(i);
+        c(j) = 2/(dy2*(dy1+dy2));
+    end
+    for j=1:ny
         d(j) = rhspc(i,j);
     end
 
-    % Neumann BC at j = 1 (bottom)
-    b(1) = -2.0 * dyi^2 - kx2(i);
-    c(1) =  2.0 * dyi^2;
-    a(1) =  0.0;
+    % Neumann BC at j=1 (bottom)
+    dy2 = y(2) - y(1);
+    b(1) = -2/(dy2^2) - kx2(i);
+    c(1) = 2/(dy2^2);
+    a(1) = 0.0;
 
-    % Neumann BC at j = ny (top)
-    a(ny) =  2.0 * dyi^2;
-    b(ny) = -2.0 * dyi^2 - kx2(i);
-    c(ny) =  0.0;
+    % Neumann BC at j=ny (top)
+    dy1 = y(ny) - y(ny-1);
+    a(ny) = 2/(dy1*dy1);
+    b(ny) = -2/(dy1*dy1) - kx2(i);
+    c(ny) = 0.0;
 
     % Special handling for kx = 0 (mean mode)
     if (kx(i) == 0) 
@@ -133,7 +141,7 @@ hold off
 
 % Plot results from Matlab
 figure(3)
-subplot(2,4,1)
+subplot(2,2,1)
 contourf(x,y,rhsp', 30, 'EdgeColor', 'none');
 hold on
 title('RHS - Matlab'); 
@@ -142,7 +150,7 @@ ylabel('y');
 colorbar
 hold off
 
-subplot(2,4,2)
+subplot(2,2,2)
 contourf(x, y, p', 30, 'EdgeColor', 'none');
 hold on
 title('Numerical - Matlab'); 
@@ -151,7 +159,7 @@ ylabel('y');
 colorbar
 hold off
 
-subplot(2,4,3)
+subplot(2,2,3)
 contourf(x, y, pext', 30, 'EdgeColor', 'none');
 title('Analytical'); 
 xlabel('x'); 
@@ -159,7 +167,7 @@ ylabel('y');
 colorbar
 hold off
 
-subplot(2,4,4)
+subplot(2,2,4)
 contourf(x, y, (p-pext)', 30, 'EdgeColor', 'none');
 title('Error - Matlab'); 
 xlabel('x'); 
@@ -168,49 +176,3 @@ colorbar
 hold off
 
 
-% Read results from Fortran code
-fid = fopen('../in.dat');
-var = fread(fid, nx*ny, 'double');
-fclose(fid);
-rhspf=reshape(var,[nx ny]);
-
-fid = fopen('../out.dat');
-var = fread(fid, nx*ny, 'double');
-fclose(fid);
-pf=reshape(var,[nx ny]);
-
-
-subplot(2,4,5)
-contourf(x, y, rhspf', 30, 'EdgeColor', 'none');
-hold on
-title('RHS - Fortran'); 
-xlabel('x'); 
-ylabel('y');
-colorbar
-hold off
-
-subplot(2,4,6)
-contourf(x, y, pf', 30, 'EdgeColor', 'none');
-hold on
-title('Numerical - Fortran'); 
-xlabel('x'); 
-ylabel('y');
-colorbar
-hold off
-
-subplot(2,4,7)
-contourf(x, y, pext', 30, 'EdgeColor', 'none');
-title('Analytical'); 
-xlabel('x'); 
-ylabel('y');
-colorbar
-hold off
-
-subplot(2,4,8)
-contourf(x, y, (pf-pext)', 30, 'EdgeColor', 'none');
-hold on
-title('Numerical - Fortran'); 
-xlabel('x'); 
-ylabel('y');
-colorbar
-hold off
