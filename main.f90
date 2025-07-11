@@ -167,14 +167,7 @@ enddo
       rhsphi(i,j)=rhsphi(i,j)+gams*(((phi(ip,j)^2-phi(ip,j))*normx(ip,j) - (phi(im,j)^2-phi(im,j))*normx(im,j))*0.5*dxi + ((phi(i,jp)^2-phi(i,jp))*normy(i,jp) - (phi(i,jm)^2-phi(i,jm))*normy(i,jm))*0.5*dyi);
     enddo
   enddo
-  !%boiling term
-  !for i=1:nx
-  !   for j=1:ny
-  !       melt(i,j) = phi(i,j)*(1-phi(i,j))/eps*mb;
-  !       rhsphi(i,j)= rhsphi(i,j) + (2-rhor)*melt(i,j)*((1-phi(i,j))/rhol + phi(i,j)/rhov);
-  !   end
-  !end
-  ! phase-field n+1
+  ! phase-field n+1 (Euler explicit)
   do i=1,nx
     do j=2,ny-2
       phi(i,j) = phi(i,j) + dt*rhsphi(i,j);
@@ -266,7 +259,7 @@ p=p/nx
 
 ! write pressure (debug only)
 open(unit=55,file='out.dat',form='unformatted',position='append',access='stream',status='new')
-write(55) p(:,:)
+write(55) phi(:,:)
 close(55)
 !##########################################################
 !End of Poisson solver, pressure in physical space obtained
