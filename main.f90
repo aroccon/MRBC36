@@ -10,6 +10,7 @@ integer, parameter :: nx=64, ny=64
 double precision, parameter :: pi=3.141592653589793d0
 double precision :: dx, dy, lx, ly, acoeff, q, l2norm, err, dyi, factor
 integer :: i, j, k, n, m, t
+integer :: ip,im,jp,jm
 double precision, allocatable :: x(:), y(:), kx(:), kx2(:)
 double precision, allocatable :: u(:,:),  v(:,:), rhsu(:,:), rhsv(:,:)
 double precision, allocatable :: rhsp(:,:),  p(:,:), pext(:,:)
@@ -17,37 +18,22 @@ double precision, allocatable :: rhsphi(:,:), phi(:,:), normx(:,:), normy(:,:)
 double complex, allocatable :: rhspc(:,:), pc(:,:), rhs(:)
 double complex :: a(ny), b(ny), c(ny), d(ny), sol(ny)
 integer :: planf, planb, status, ntmax
-double precision :: radius, eps, gamma, rho, mu, sigma
+double precision :: radius, eps, epsi, gamma, rho, mu, sigma, dxi, ddxi, ddyi, gams, normod, dt, umax
+double precision :: pos, epsratio
 
+!##########################################################
 ! declare parameters
+! Define some basic quantities
 ntmax=10
 radius=0.5d0
-eps=dx
+epsratio=1.0d0
 gamma=0.0d0
 rho=1.d0
 mu=1.d0
 sigma=0.d0
-
-! allocate variables (avoid allocate/deallocate at run time)
-allocate(x(nx),y(ny))
-allocate(rhsp(nx,ny),p(nx,ny),pext(nx,ny))
-allocate(rhspc(nx/2+1,ny),pc(nx/2+1,ny))
-allocate(kx(nx/2+1))
-allocate(kx2(nx/2+1))
-
-
-! phase-field variables
-allocate(phi(nx,ny),rhsphi(nx,ny))
-allocate(normx(nx,ny),normy(nx,ny))
-
-
-
-
-!##########################################################
-! Define some basic quantities
-!##########################################################
+radius=0.3
 ! Define domain size
-lx = 2.d0*pi
+lx = 1.d0
 ly = 1.d0
 ! Grid spacing: dx divided by nx to have perfect periodicity
 dx = lx/nx 
@@ -56,6 +42,33 @@ dyi = 1.d0/dy
 dxi=1.d0/dx
 ddxi=dxi*dxi
 ddyi=dyi*dyi
+dt=0.001
+eps=max(dx,dy)
+epsi=1.d0/eps
+
+!########################################################
+! allocate variables (avoid allocate/deallocate at run time)
+allocate(x(nx),y(ny))
+allocate(rhsp(nx,ny),p(nx,ny),pext(nx,ny))
+allocate(rhspc(nx/2+1,ny),pc(nx/2+1,ny))
+allocate(kx(nx/2+1))
+allocate(kx2(nx/2+1))
+
+! velocity variables
+allocate(u(nx,ny),v(nx,ny-1))
+
+! phase-field variables
+allocate(phi(nx,ny),rhsphi(nx,ny))
+allocate(normx(nx,ny),normy(nx,ny))
+!########################################################
+
+write(*,*) "NEMESI36"
+write(*,*) "Code for 2D phase-field simulation"
+write(*,*) "Grid.     :", nx, ny
+write(*,*) "Lx and Ly :", lx, ly
+write(*,*) "Dx and Dy :", dx, dy
+write(*,*) "Time step :", dt
+write(*,*) "eps       :", eps
 
 ! Parameters for test solution (debug only)
 !n= 1
@@ -98,24 +111,43 @@ status=status + cufftPlanMany(planb, 1, nx, [nx/2+1,ny], 1, nx/2+1, [nx,ny], 1, 
 !##########################################################
 ! Init fields
 !##########################################################
+write(*,*) "Initialize velocity and phase-field"
+! u velocity
 do i=1,nx
   do j=1,ny
-    phi(i,j)=1.0d0
+    u(i,j)=0.0d0
+  enddo
+enddo
+! v velocity
+do i=1,nx
+  do j=1,ny-1
+    v(i,j)=0.0d0
+  enddo
+enddo
+! phase-field
+do i=1,nx
+  do j=1,ny
+    pos=(x(i)-lx/2)**2d0 + (y(j)-ly/2)**2d0
+    phi(i,j)=0.5d0*(1-tanh((sqrt(pos)-radius)/2/eps))
   enddo
 enddo
 
+! write pressure (debug only)
+open(unit=55,file='out.dat',form='unformatted',position='append',access='stream',status='new')
+write(55) phi(:,:)
+close(55)
 
 !##########################################################
 ! Start temporal loop
 !##########################################################
 
+write(*,*) "Start temporal loop"
 
 !do t=1,ntmax
 !##########################################################
 ! Advance phase-field (constant ATM)
 !##########################################################
-
-  ! advection
+  ! Velocity
   do i=1,nx
     do j=2,ny-1
       ip=i+1
@@ -124,22 +156,24 @@ enddo
       jm=j-1
       if (ip .gt. nx) ip=1
       if (im .lt. 1) im=nx
-      rhsphi(i,j)=-(u(ip,j)*0.5*(phi(ip,j)+phi(i,j)) - u(i,j)*0.5*(phi(i,j)+phi(im,j)))*dxi -(v(i,jp)*0.5*(phi(i,jp)+phi(i,j)) - v(i,j)*0.5*(phi(i,j)+phi(i,jm)))*dyi;
+      rhsphi(i,j)=-(u(ip,j)*0.5*(phi(ip,j)+phi(i,j)) - u(i,j)*0.5*(phi(i,j)+phi(im,j)))*dxi -(v(i,jp)*0.5*(phi(i,jp)+phi(i,j)) - v(i,j)*0.5*(phi(i,j)+phi(i,jm)))*dyi
     enddo
   enddo
-  ! diffusion
-  do i=1:nx
-    do j=2:ny-1
+
+  ! diffusione
+  do i=1,nx
+    do j=2,ny-1
       ip=i+1
       im=im-1
       jp=j+1
       jm=j-1
       if (ip .gt. nx) ip=1
       if (im .lt. 1) im=nx
-      rhsphi(i,j)=rhsphi(i,j) + gams*(eps*(phi(ip,j)-2*phi(i,j)+phi(im,j))*ddxi +eps*(phi(i,jp) -2*phi(i,j) +phi(i,jm))*ddyi);      
+      rhsphi(i,j)=rhsphi(i,j) + gams*(eps*(phi(ip,j)-2*phi(i,j)+phi(im,j))*ddxi +eps*(phi(i,jp) -2*phi(i,j) +phi(i,jm))*ddyi)      
     enddo
   enddo
-  !compute normals
+
+  ! compute normals
   do i=1,nx
     do j=2,ny-1
       ip=i+1
@@ -150,12 +184,13 @@ enddo
       if (im .lt. 1) im=nx
       normx(i,j) = (phi(ip,j)-phi(im,j));
       normy(i,j) = (phi(i,jp)-phi(i,jm));
-      normod = 1.0/(sqrt(normx(i,j)^2+normy(i,j)^2) + 1.e-16);
+      normod = 1.0d0/(sqrt(normx(i,j)**2d0 + normy(i,j)**2d0) + 1.e-16)
       normx(i,j) = normx(i,j)*normod;
       normy(i,j) = normy(i,j)*normod;
     enddo
   enddo
-  !add sharpening
+
+  gams=0.0*umax
   do i=1,nx
     do j=2,ny-1
       ip=i+1
@@ -164,21 +199,25 @@ enddo
       jm=j-1
       if (ip .gt. nx) ip=1
       if (im .lt. 1) im=nx
-      rhsphi(i,j)=rhsphi(i,j)+gams*(((phi(ip,j)^2-phi(ip,j))*normx(ip,j) - (phi(im,j)^2-phi(im,j))*normx(im,j))*0.5*dxi + ((phi(i,jp)^2-phi(i,jp))*normy(i,jp) - (phi(i,jm)^2-phi(i,jm))*normy(i,jm))*0.5*dyi);
+      !rhsphi(i,j)=rhsphi(i,j)+gams*(((phi(ip,j)**2.d0-phi(ip,j))*normx(ip,j) - (phi(im,j)**2.d0-phi(im,j))*normx(im,j))*0.5*dxi + &
+      !                              ((phi(i,jp)**2.d0-phi(i,jp))*normy(i,jp) - (phi(i,jm)**2.d0-phi(i,jm))*normy(i,jm))*0.5*dyi)
     enddo
   enddo
+
   ! phase-field n+1 (Euler explicit)
   do i=1,nx
     do j=2,ny-2
-      phi(i,j) = phi(i,j) + dt*rhsphi(i,j);
+      phi(i,j) = phi(i,j)  + dt*rhsphi(i,j);
     enddo
   enddo
+
   ! impose BC on the phase-field
   do i=1,nx
     phi(i,1) = phi(i,2)
     phi(i,ny) = phi(i,ny-1)
   enddo
   ! no flux at the walls
+  !write(*,*) "maxphi", maxval(phi)
 
 
 !##########################################################
@@ -258,9 +297,9 @@ p=p/nx
 !$acc end kernels
 
 ! write pressure (debug only)
-open(unit=55,file='out.dat',form='unformatted',position='append',access='stream',status='new')
-write(55) phi(:,:)
-close(55)
+!open(unit=55,file='out.dat',form='unformatted',position='append',access='stream',status='new')
+!write(55) phi(:,:)
+!close(55)
 !##########################################################
 !End of Poisson solver, pressure in physical space obtained
 !##########################################################
@@ -272,7 +311,7 @@ close(55)
 
 
 deallocate(x,y)
-deallocate(a,b,c,d,sol)
+!deallocate(a,b,c,d,sol)
 deallocate(kx,kx2)
 deallocate(rhsp,p,rhspc)
 
