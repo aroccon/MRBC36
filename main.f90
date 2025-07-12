@@ -18,7 +18,7 @@ double precision, allocatable :: rhsphi(:,:), phi(:,:), normx(:,:), normy(:,:)
 double complex, allocatable :: rhspc(:,:), pc(:,:), rhs(:)
 double complex :: a(ny), b(ny), c(ny), d(ny), sol(ny)
 integer :: planf, planb, status, ntmax
-double precision :: radius, eps, epsi, gamma, rho, mu, sigma, dxi, ddxi, ddyi, gams, normod, dt, umax
+double precision :: radius, eps, epsi, gamma, rho, mu, sigma, dxi, ddxi, ddyi, normod, dt, umax
 double precision :: pos, epsratio
 
 !##########################################################
@@ -38,11 +38,11 @@ ly = 1.d0
 ! Grid spacing: dx divided by nx to have perfect periodicity
 dx = lx/nx 
 dy = ly/(ny-1)
-dyi = 1.d0/dy
 dxi=1.d0/dx
+dyi=1.d0/dy
 ddxi=dxi*dxi
 ddyi=dyi*dyi
-dt=0.001
+dt=0.0001
 eps=max(dx,dy)
 epsi=1.d0/eps
 
@@ -128,14 +128,10 @@ enddo
 do i=1,nx
   do j=1,ny
     pos=(x(i)-lx/2)**2d0 + (y(j)-ly/2)**2d0
-    phi(i,j)=0.5d0*(1-tanh((sqrt(pos)-radius)/2/eps))
+    phi(i,j)=0.5d0*(1.d0-tanh((sqrt(pos)-radius)/2/eps))
   enddo
 enddo
 
-! write pressure (debug only)
-open(unit=55,file='out.dat',form='unformatted',position='append',access='stream',status='new')
-write(55) phi(:,:)
-close(55)
 
 !##########################################################
 ! Start temporal loop
@@ -160,7 +156,9 @@ write(*,*) "Start temporal loop"
     enddo
   enddo
 
-  ! diffusione
+  ! diffusion
+  umax=0.0d0 ! replace then with real vel max
+  gamma=1.0d0*umax
   do i=1,nx
     do j=2,ny-1
       ip=i+1
@@ -169,7 +167,7 @@ write(*,*) "Start temporal loop"
       jm=j-1
       if (ip .gt. nx) ip=1
       if (im .lt. 1) im=nx
-      rhsphi(i,j)=rhsphi(i,j) + gams*(eps*(phi(ip,j)-2*phi(i,j)+phi(im,j))*ddxi +eps*(phi(i,jp) -2*phi(i,j) +phi(i,jm))*ddyi)      
+      rhsphi(i,j)=rhsphi(i,j) + gamma*eps*((phi(ip,j)-2.d0*phi(i,j)+phi(im,j))*ddxi + (phi(i,jp) -2.d0*phi(i,j) +phi(i,jm))*ddyi)      
     enddo
   enddo
 
@@ -182,15 +180,14 @@ write(*,*) "Start temporal loop"
       jm=j-1
       if (ip .gt. nx) ip=1
       if (im .lt. 1) im=nx
-      normx(i,j) = (phi(ip,j)-phi(im,j));
-      normy(i,j) = (phi(i,jp)-phi(i,jm));
+      normx(i,j) = (phi(ip,j)-phi(im,j))
+      normy(i,j) = (phi(i,jp)-phi(i,jm))
       normod = 1.0d0/(sqrt(normx(i,j)**2d0 + normy(i,j)**2d0) + 1.e-16)
-      normx(i,j) = normx(i,j)*normod;
-      normy(i,j) = normy(i,j)*normod;
+      normx(i,j) = normx(i,j)*normod
+      normy(i,j) = normy(i,j)*normod
     enddo
   enddo
 
-  gams=0.0*umax
   do i=1,nx
     do j=2,ny-1
       ip=i+1
@@ -199,14 +196,14 @@ write(*,*) "Start temporal loop"
       jm=j-1
       if (ip .gt. nx) ip=1
       if (im .lt. 1) im=nx
-      !rhsphi(i,j)=rhsphi(i,j)+gams*(((phi(ip,j)**2.d0-phi(ip,j))*normx(ip,j) - (phi(im,j)**2.d0-phi(im,j))*normx(im,j))*0.5*dxi + &
-      !                              ((phi(i,jp)**2.d0-phi(i,jp))*normy(i,jp) - (phi(i,jm)**2.d0-phi(i,jm))*normy(i,jm))*0.5*dyi)
+      rhsphi(i,j)=rhsphi(i,j)+gamma*(((phi(ip,j)**2.d0-phi(ip,j))*normx(ip,j) - (phi(im,j)**2.d0-phi(im,j))*normx(im,j))*0.5*dxi + &
+                                     ((phi(i,jp)**2.d0-phi(i,jp))*normy(i,jp) - (phi(i,jm)**2.d0-phi(i,jm))*normy(i,jm))*0.5*dyi)
     enddo
   enddo
 
   ! phase-field n+1 (Euler explicit)
   do i=1,nx
-    do j=2,ny-2
+    do j=2,ny-1
       phi(i,j) = phi(i,j)  + dt*rhsphi(i,j);
     enddo
   enddo
@@ -218,7 +215,12 @@ write(*,*) "Start temporal loop"
   enddo
   ! no flux at the walls
   !write(*,*) "maxphi", maxval(phi)
+   write(*,*) "phi center", phi(32,32)
 
+  ! write pressure (debug only)
+  open(unit=55,file='out.dat',form='unformatted',position='append',access='stream',status='new')
+  write(55) phi(:,:)
+  close(55)
 
 !##########################################################
 !Start of Poisson solver, pressure in physical space obtained
