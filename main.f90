@@ -21,6 +21,7 @@ double complex :: a(ny), b(ny), c(ny), d(ny), sol(ny)
 integer :: planf, planb, status, ntmax
 double precision :: radius, eps, epsi, gamma, rho, mu, sigma, dxi, ddxi, ddyi, normod, dt, umax
 double precision :: pos, epsratio, times, timef, difftemp
+double precision :: h11, h12, h21, h22
 
 !##########################################################
 ! declare parameters
@@ -158,8 +159,8 @@ do t=1,ntmax
   umax=0.0d0 ! replace then with real vel max
   gamma=1.0d0*umax
   !$acc kernels
-  do i=1,nx
-    do j=2,ny-1
+  do j=2,ny-1
+    do i=1,nx
       ip=i+1
       im=im-1
       jp=j+1
@@ -182,8 +183,8 @@ do t=1,ntmax
 
   !$acc kernels
   ! compute sharpening (then move to ACDI)
-  do i=1,nx
-    do j=2,ny-1
+  do j=2,ny-1
+    do i=1,nx
       ip=i+1
       im=im-1
       jp=j+1
@@ -223,8 +224,8 @@ do t=1,ntmax
   !##########################################################
   ! Advection + diffusion (one loop, faster on GPU)
   !$acc kernels
-  do i=1,nx
-    do j=2,ny-1
+  do j=2,ny-1
+    do i=1,nx
       ip=i+1
       im=im-1
       jp=j+1
@@ -255,7 +256,42 @@ do t=1,ntmax
   !##########################################################
   ! END 2: Temperature an n+1 obtained
   !##########################################################
+  
 
+  !##########################################################
+  ! START 3A: Projection step for NS
+  !##########################################################
+
+  !$acc end kernels
+  ! Advection
+  do j=2,ny-1
+    do j=1,nx
+      ip=i+1
+      im=im-1
+      jp=j+1
+      jm=j-1
+      if (ip .gt. nx) ip=1
+      if (im .lt. 1) im=nx
+      ! compute the products (conservative form)
+      h11 = (u(ip,j,k)+u(i,j,k))*(u(ip,j,k)+u(i,j,k))     - (u(i,j,k)+u(im,j,k))*(u(i,j,k)+u(im,j,k))
+      h12 = (u(i,jp,k)+u(i,j,k))*(v(i,jp,k)+v(im,jp,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k))
+      h21 = (u(ip,j,k)+u(ip,jm,k))*(v(ip,j,k)+v(i,j,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k))
+      h22 = (v(i,jp,k)+v(i,j,k))*(v(i,jp,k)+v(i,j,k))     - (v(i,j,k)+v(i,jm,k))*(v(i,j,k)+v(i,jm,k))
+      ! compute the derivative
+      h11=h11*0.25d0*dxi
+      h12=h12*0.25d0*dxi
+      h21=h21*0.25d0*dxi
+      h22=h22*0.25d0*dxi
+      ! add to the rhs
+      rhsu(i,j,k)=-(h11+h12)
+      rhsv(i,j,k)=-(h21+h22)
+    enddo
+  enddo
+  !$acc end kernels
+
+  !##########################################################
+  ! END 3A: Rhs (from projection computed)
+  !##########################################################
 
   !##########################################################
   ! 3B Start of Poisson solver, pressure in physical space obtained
