@@ -2,8 +2,7 @@
 FC = nvfortran
 
 # Compiler flags
-FFLAGS = -fast -gpu=managed -cuda -acc -cudalib -Mfree -Mpreprocess -mcmodel=medium
-#FFLAGS = -fast -gpu=managed -acc -cudalib 
+FFLAGS = -fast -gpu=managed -acc -Mfree -cudalib=cufft -Mpreprocess -mcmodel=medium
 
 # Executable name
 EXEC = nemesi36

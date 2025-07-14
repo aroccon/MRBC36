@@ -20,8 +20,7 @@ double complex, allocatable :: rhspc(:,:), pc(:,:), rhs(:)
 double complex :: a(ny), b(ny), c(ny), d(ny), sol(ny)
 integer :: planf, planb, status, ntmax
 double precision :: radius, eps, epsi, gamma, rho, mu, sigma, dxi, ddxi, ddyi, normod, dt, umax
-double precision :: pos, epsratio, times, timef, difftemp
-double precision :: h11, h12, h21, h22
+double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, rhoi
 
 !##########################################################
 ! declare parameters
@@ -35,6 +34,7 @@ mu=1.d0
 sigma=0.d0
 radius=0.3d0
 difftemp=0.01d0
+rho=1.d0
 ! Define domain size
 lx = 1.d0
 ly = 1.d0
@@ -48,9 +48,14 @@ ddyi=dyi*dyi
 dt=0.0001
 eps=max(dx,dy)
 epsi=1.d0/eps
+rho=1.d0/rhoi
+mu=0.001d0
 
 !#define phiflag 0
 !#define tempflag 0
+
+!assign the code to one GPU
+call acc_set_device_num(1,acc_device_nvidia)
 
 !########################################################
 ! allocate variables (avoid allocate/deallocate at run time)
@@ -61,7 +66,8 @@ allocate(kx(nx/2+1))
 allocate(kx2(nx/2+1))
 
 ! velocity variables (defined on cell faces)
-allocate(u(nx,ny),v(nx,ny-1))
+allocate(u(nx,ny),v(nx,ny+1))
+allocate(rhsu(nx,ny),rhsv(nx,ny+1))
 
 ! phase-field variables (defined on centers)
 allocate(phi(nx,ny),rhsphi(nx,ny))
@@ -74,7 +80,7 @@ allocate(temp(nx,ny),rhstemp(nx,ny))
 !########################################################
 
 write(*,*) "NEMESI36"
-write(*,*) "Code for 2D phase-field simulation"
+write(*,*) "Code for 2D phase-field simulation in RB configuration"
 write(*,*) "Grid.     :", nx, ny
 write(*,*) "Lx and Ly :", lx, ly
 write(*,*) "Dx and Dy :", dx, dy
@@ -158,7 +164,6 @@ do t=1,ntmax
   ! Advection + diffusion term
   umax=0.0d0 ! replace then with real vel max
   gamma=1.0d0*umax
-  !$acc kernels
   do j=2,ny-1
     do i=1,nx
       ip=i+1
@@ -179,12 +184,10 @@ do t=1,ntmax
       normy(i,j) = normy(i,j)*normod 
     enddo
   enddo
-  !$acc end kernels
 
-  !$acc kernels
   ! compute sharpening (then move to ACDI)
-  do j=2,ny-1
-    do i=1,nx
+  do i=1,nx
+    do j=2,ny-1
       ip=i+1
       im=im-1
       jp=j+1
@@ -204,15 +207,13 @@ do t=1,ntmax
   enddo
 
 
-  ! impose BC on the phase-field
+  ! impose BC on the phase-field (no flux at the walls)
   do i=1,nx
     phi(i,1) = phi(i,2)
     phi(i,ny) = phi(i,ny-1)
   enddo
-  !$acc end kernels
-  ! no flux at the walls
   !write(*,*) "maxphi", maxval(phi)
-  write(*,*) "phi center", phi(32,32)
+  write(*,*) "Phase field", phi(32,32)
   !##########################################################
   ! END 1: phase-field n+1 obtained
   !##########################################################
@@ -223,9 +224,8 @@ do t=1,ntmax
   ! STEP 2: Advance temperature field 
   !##########################################################
   ! Advection + diffusion (one loop, faster on GPU)
-  !$acc kernels
-  do j=2,ny-1
-    do i=1,nx
+  do i=1,nx
+    do j=2,ny-1
       ip=i+1
       im=im-1
       jp=j+1
@@ -247,25 +247,23 @@ do t=1,ntmax
   enddo
 
   ! impose BC on the temperature field
-  ! Tob wall hot and bottom wall cold
+  ! Top wall hot and bottom wall cold
   do i=1,nx
     temp(i,1) = 1.0d0
     temp(i,ny) = -1.0d0
   enddo
-  !$acc end kernels
+  write(*,*) "End temperature"
   !##########################################################
   ! END 2: Temperature an n+1 obtained
   !##########################################################
-  
 
   !##########################################################
   ! START 3A: Projection step for NS
   !##########################################################
 
-  !$acc end kernels
   ! Advection
-  do j=2,ny-1
-    do j=1,nx
+  do j=2,ny
+    do i=1,nx
       ip=i+1
       im=im-1
       jp=j+1
@@ -273,21 +271,29 @@ do t=1,ntmax
       if (ip .gt. nx) ip=1
       if (im .lt. 1) im=nx
       ! compute the products (conservative form)
-      h11 = (u(ip,j,k)+u(i,j,k))*(u(ip,j,k)+u(i,j,k))     - (u(i,j,k)+u(im,j,k))*(u(i,j,k)+u(im,j,k))
-      h12 = (u(i,jp,k)+u(i,j,k))*(v(i,jp,k)+v(im,jp,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k))
-      h21 = (u(ip,j,k)+u(ip,jm,k))*(v(ip,j,k)+v(i,j,k))   - (u(i,j,k)+u(i,jm,k))*(v(i,j,k)+v(im,j,k))
-      h22 = (v(i,jp,k)+v(i,j,k))*(v(i,jp,k)+v(i,j,k))     - (v(i,j,k)+v(i,jm,k))*(v(i,j,k)+v(i,jm,k))
+      h11 = (u(ip,j)+u(i,j))*(u(ip,j)+u(i,j))     - (u(i,j)+u(im,j))*(u(i,j)+u(im,j))
+      h12 = (u(i,jp)+u(i,j))*(v(i,jp)+v(im,jp))   - (u(i,j)+u(i,jm))*(v(i,j)+v(im,j))
+      h21 = (u(ip,j)+u(ip,jm))*(v(ip,j)+v(i,j))   - (u(i,j)+u(i,jm))*(v(i,j)+v(im,j))
+      h22 = (v(i,jp)+v(i,j))*(v(i,jp)+v(i,j))     - (v(i,j)+v(i,jm))*(v(i,j)+v(i,jm))
       ! compute the derivative
       h11=h11*0.25d0*dxi
       h12=h12*0.25d0*dxi
       h21=h21*0.25d0*dxi
       h22=h22*0.25d0*dxi
-      ! add to the rhs
-      rhsu(i,j,k)=-(h11+h12)
-      rhsv(i,j,k)=-(h21+h22)
+      ! add advection to the rhs
+      rhsu(i,j)=-(h11+h12)
+      rhsv(i,j)=-(h21+h22)
+      ! compute the diffusive terms
+      h11 = mu*(u(ip,j)-2.d0*u(i,j)+u(im,j))*ddxi
+      h12 = mu*(u(i,jp)-2.d0*u(i,j)+u(i,jm))*ddxi
+      h21 = mu*(v(ip,j)-2.d0*v(i,j)+v(im,j))*ddxi
+      h22 = mu*(v(i,jp)-2.d0*v(i,j)+v(i,jm))*ddxi
+      rhsu(i,j)=rhsu(i,j)+(h11+h12)*rhoi
+      rhsv(i,j)=rhsv(i,j)+(h21+h22)*rhoi
     enddo
   enddo
-  !$acc end kernels
+
+
 
   !##########################################################
   ! END 3A: Rhs (from projection computed)
