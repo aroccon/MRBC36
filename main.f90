@@ -48,8 +48,8 @@ dt=0.0001
 eps=max(dx,dy)
 epsi=1.d0/eps
 
-#define phiflag 0
-#define tempflag 0
+!#define phiflag 0
+!#define tempflag 0
 
 !########################################################
 ! allocate variables (avoid allocate/deallocate at run time)
@@ -151,7 +151,6 @@ write(*,*) "Start temporal loop"
 do t=1,ntmax
   call cpu_time(times)
   write(*,*) "Time step",t,"of",ntmax
-  #if phiflag == 1
   !##########################################################
   ! START 1: Advance phase-field 
   !##########################################################
@@ -213,7 +212,6 @@ do t=1,ntmax
   ! no flux at the walls
   !write(*,*) "maxphi", maxval(phi)
   write(*,*) "phi center", phi(32,32)
-  #endif
   !##########################################################
   ! END 1: phase-field n+1 obtained
   !##########################################################
