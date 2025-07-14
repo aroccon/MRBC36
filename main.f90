@@ -48,6 +48,9 @@ dt=0.0001
 eps=max(dx,dy)
 epsi=1.d0/eps
 
+#define phiflag 0
+#define tempflag 0
+
 !########################################################
 ! allocate variables (avoid allocate/deallocate at run time)
 allocate(x(nx),y(ny))
@@ -148,8 +151,9 @@ write(*,*) "Start temporal loop"
 do t=1,ntmax
   call cpu_time(times)
   write(*,*) "Time step",t,"of",ntmax
+  #if phiflag == 1
   !##########################################################
-  ! STEP 1: Advance phase-field 
+  ! START 1: Advance phase-field 
   !##########################################################
   ! Advection + diffusion term
   umax=0.0d0 ! replace then with real vel max
@@ -208,11 +212,16 @@ do t=1,ntmax
   !$acc end kernels
   ! no flux at the walls
   !write(*,*) "maxphi", maxval(phi)
-   write(*,*) "phi center", phi(32,32)
+  write(*,*) "phi center", phi(32,32)
+  #endif
+  !##########################################################
+  ! END 1: phase-field n+1 obtained
+  !##########################################################
+
 
 
   !##########################################################
-  ! STEP 1: Advance temperature field 
+  ! STEP 2: Advance temperature field 
   !##########################################################
   ! Advection + diffusion (one loop, faster on GPU)
   !$acc kernels
@@ -239,11 +248,16 @@ do t=1,ntmax
   enddo
 
   ! impose BC on the temperature field
+  ! Tob wall hot and bottom wall cold
   do i=1,nx
     temp(i,1) = 1.0d0
     temp(i,ny) = -1.0d0
   enddo
   !$acc end kernels
+  !##########################################################
+  ! END 2: Temperature an n+1 obtained
+  !##########################################################
+
 
   !##########################################################
   ! 3B Start of Poisson solver, pressure in physical space obtained
