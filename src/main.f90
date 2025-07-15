@@ -16,7 +16,7 @@ integer :: i, j, k, n, m, t
 integer :: ip,im,jp,jm
 double precision, allocatable :: x(:), y(:), kx(:), kx2(:)
 double complex :: a(ny), b(ny), c(ny), d(ny), sol(ny), meanp(ny)
-integer :: planf, planb, status, ntmax
+integer :: planf, planb, status, ntmax, dump
 double precision :: radius, eps, epsi, gamma, rho, mu, dxi, ddxi, ddyi, normod, dt, umax
 double precision :: chempot, sigma
 double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, rhoi, alpha, beta
@@ -24,11 +24,13 @@ double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, r
 !##########################################################
 ! declare parameters
 ! Define some basic quantities
-ntmax=10000
+ntmax=100
+t=0
+dump=10
 radius=0.5d0
 epsratio=1.0d0
 gamma=0.0d0
-sigma=0.1d0
+sigma=0.0d0
 radius=0.3d0
 difftemp=7.0711e-04 ! sqrt(Ra) with Ra=2e6 
 rho=1.d0
@@ -43,7 +45,7 @@ dxi=1.d0/dx
 dyi=1.d0/dy
 ddxi=dxi*dxi
 ddyi=dyi*dyi
-dt=0.001
+dt=0.0001
 eps=max(dx,dy)
 epsi=1.d0/eps
 rhoi=1.d0/rho
@@ -157,13 +159,15 @@ do i=1,nx
   temp(i,ny) = 0.0d0
   temp(i,1) =  1.0d0
 enddo
+! output fields
+call writefield(t,1)
+call writefield(t,2)
+call writefield(t,3)
+call writefield(t,4)
+call writefield(t,5)
 !##########################################################
 ! End fields init
 !##########################################################
-! write input field (for debug)
-open(unit=55,file='t0.dat',form='unformatted',position='append',access='stream',status='new')
-write(55) temp(:,:)
-close(55)
 
 
 
@@ -182,7 +186,6 @@ do t=1,ntmax
   ! Advection + diffusion term
   umax=0.0d0 ! replace then with real vel max
   gamma=1.0d0*umax
-  !$acc parallel loop collapse(2)
   do j=2,ny-1
     do i=1,nx
       ip=i+1
@@ -278,7 +281,6 @@ do t=1,ntmax
     temp(i,ny) = 0.0d0
   enddo
   !$acc end kernels
-  write(*,*) "End temperature"
   !##########################################################
   ! END 2: Temperature an n+1 obtained
   !##########################################################
@@ -353,8 +355,8 @@ do t=1,ntmax
       im=i-1
       jm=j-1
       if (im .lt. 1) im=nx
-      rhsu(i,j)=rhsu(i,j)+0.5d0*(fxst(im,j)+fxst(i,j))*rhoi
-      rhsv(i,j)=rhsv(i,j)+0.5d0*(fyst(i,jm)+fyst(i,j))*rhoi
+      !rhsu(i,j)=rhsu(i,j)+0.5d0*(fxst(im,j)+fxst(i,j))*rhoi
+      !rhsv(i,j)=rhsv(i,j)+0.5d0*(fyst(i,jm)+fyst(i,j))*rhoi
     enddo
   enddo
   !$acc end kernels
@@ -523,22 +525,18 @@ do t=1,ntmax
   call cpu_time(timef)
   print '(" Time elapsed = ",f6.1," ms")',1000*(timef-times)
 
+  !output fields
+  if (mod(t,dump) .eq. 0) then
+    write(*,*) "Saving output files"
+    ! write velocity and pressure fiels (1-4)
+	  call writefield(t,1)
+	  call writefield(t,2)
+	  call writefield(t,3)
+    call writefield(t,4)
+	  call writefield(t,5)
+  endif
 
 enddo
-
-! write pressure (debug only)
-open(unit=55,file='tf.dat',form='unformatted',position='append',access='stream',status='new')
-write(55) temp(:,:)
-close(55)
-
-! write pressure (debug only)
-open(unit=55,file='uf.dat',form='unformatted',position='append',access='stream',status='new')
-write(55) u(:,:)
-close(55)
-
-open(unit=55,file='vf.dat',form='unformatted',position='append',access='stream',status='new')
-write(55) v(:,:)
-close(55)
 
 deallocate(x,y)
 !deallocate(a,b,c,d,sol)
