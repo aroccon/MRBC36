@@ -26,7 +26,7 @@ double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, r
 !##########################################################
 ! declare parameters
 ! Define some basic quantities
-ntmax=1
+ntmax=10
 radius=0.5d0
 epsratio=1.0d0
 gamma=0.0d0
@@ -131,9 +131,9 @@ status=status + cufftPlanMany(planb, 1, nx, [nx/2+1,ny], 1, nx/2+1, [nx,ny], 1, 
 
 
 !##########################################################
-! Init fields
+! Initialize fields
 !##########################################################
-write(*,*) "Initialize velocity and phase-field"
+write(*,*) "Initialize velocity, temperature and phase-field"
 ! u velocity
 do i=1,nx
   do j=1,ny
@@ -153,6 +153,18 @@ do i=1,nx
     phi(i,j)=0.5d0*(1.d0-tanh((sqrt(pos)-radius)/2.d0/eps))
   enddo
 enddo
+! temperature
+do i=1,nx
+  do 2=1,ny-1
+    temp(i,j)=0.d0
+  enddo
+enddo
+!##########################################################
+! End fields init
+!##########################################################
+
+
+
 
 
 !##########################################################
@@ -207,10 +219,9 @@ do t=1,ntmax
   ! phase-field n+1 (Euler explicit)
   do i=1,nx
     do j=2,ny-1
-      phi(i,j) = phi(i,j)  + dt*rhsphi(i,j);
+      !phi(i,j) = phi(i,j)  + dt*rhsphi(i,j);
     enddo
   enddo
-
 
   ! impose BC on the phase-field (no flux at the walls)
   do i=1,nx
@@ -262,10 +273,16 @@ do t=1,ntmax
   ! END 2: Temperature an n+1 obtained
   !##########################################################
 
+
+
+
+
+
+
+
   !##########################################################
   ! START 3A: Projection step for NS
   !##########################################################
-
   ! Advection + diffusion
   do j=2,ny
     do i=1,nx
@@ -456,9 +473,30 @@ do t=1,ntmax
   !##########################################################
   !START 3C: Start correction step
   !##########################################################
+  do j=1,ny-1
+    do i=1,nx
+      im=i-1
+      jm=j-1
+      if (im < 1) im=nx
+      u(i,j)=u(i,j) - dt/rho*(p(i,j)-p(im,j))*dxi
+      v(i,j)=v(i,j) - dt/rho*(p(i,j)-p(i,jm))*dxi
+      um=
+    enddo
+  enddo
+
+  ! re-impose BCs on the flow field
+  do i=1,nx
+    u(i,1)=0.d0
+    u(i,ny)=0.0d0
+    v(i,1)=0.0d0
+    v(i,ny+1)=0.0d0
+  enddo
   !##########################################################
   !END 3C: End correction step
   !##########################################################
+
+
+
   call cpu_time(timef)
   print '(" Time elapsed = ",f6.1," ms")',1000*(timef-times)
 
