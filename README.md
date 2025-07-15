@@ -13,9 +13,14 @@
 - Introduced phi ✅ 
 - Introduced temperature ✅ 
 - Introduced temporal loop ✅ 
+- Navier-Stokes solution ✅ 
+- Validation (phi) 🚧 
+- Validation (temp) 🚧
+- Validation (NS) 🚧
+- RB setup
+- GPU offloading of entire code (only Poisson ATM)
 
-
-## Grid points (staggered)
+## Grid p🚧oints (staggered)
 
 ![Test](doc/grid.png)
 
