@@ -4,6 +4,9 @@ program main
 use cufft
 use iso_c_binding
 use openacc 
+use velocity
+use phase
+use temperature
 
 implicit none
 integer, parameter :: nx=128, ny=64
@@ -12,11 +15,6 @@ double precision :: dx, dy, lx, ly, acoeff, q, l2norm, err, dyi, factor
 integer :: i, j, k, n, m, t
 integer :: ip,im,jp,jm
 double precision, allocatable :: x(:), y(:), kx(:), kx2(:)
-double precision, allocatable :: u(:,:),  v(:,:), rhsu(:,:), rhsv(:,:), rhsu_o(:,:), rhsv_o(:,:)
-double precision, allocatable :: rhsp(:,:),  p(:,:), pext(:,:)
-double precision, allocatable :: rhsphi(:,:), phi(:,:), normx(:,:), normy(:,:), fxst(:,:), fyst(:,:)
-double precision, allocatable :: rhstemp(:,:), temp(:,:)
-double complex, allocatable :: rhspc(:,:), pc(:,:), rhs(:)
 double complex :: a(ny), b(ny), c(ny), d(ny), sol(ny), meanp(ny)
 integer :: planf, planb, status, ntmax
 double precision :: radius, eps, epsi, gamma, rho, mu, dxi, ddxi, ddyi, normod, dt, umax
@@ -26,15 +24,15 @@ double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, r
 !##########################################################
 ! declare parameters
 ! Define some basic quantities
-ntmax=10
+ntmax=10000
 radius=0.5d0
 epsratio=1.0d0
 gamma=0.0d0
 sigma=0.1d0
 radius=0.3d0
-difftemp=0.01d0
+difftemp=7.0711e-04 ! sqrt(Ra) with Ra=2e6 
 rho=1.d0
-mu=0.001d0
+mu=7.0711e-04 ! sqrt(1/Ra) with Ra=2e6 
 ! Define domain size
 lx = 2.d0
 ly = 1.d0
@@ -45,7 +43,7 @@ dxi=1.d0/dx
 dyi=1.d0/dy
 ddxi=dxi*dxi
 ddyi=dyi*dyi
-dt=0.0001
+dt=0.001
 eps=max(dx,dy)
 epsi=1.d0/eps
 rhoi=1.d0/rho
@@ -124,10 +122,6 @@ status=0
 status=status + cufftCreate(planb)
 status=status + cufftPlanMany(planb, 1, nx, [nx/2+1,ny], 1, nx/2+1, [nx,ny], 1, nx, CUFFT_Z2D, ny) 
 
-! write input field (for debug)
-!open(unit=55,file='in.dat',form='unformatted',position='append',access='stream',status='new')
-!write(55) rhsp(:,:)
-!close(55)
 
 
 !##########################################################
@@ -153,16 +147,23 @@ do i=1,nx
     phi(i,j)=0.5d0*(1.d0-tanh((sqrt(pos)-radius)/2.d0/eps))
   enddo
 enddo
-! temperature
-do i=1,nx
-  do 2=1,ny-1
+! temperature (internal + boundaries)
+do j=2,ny-1
+  do i=1,nx
     temp(i,j)=0.d0
   enddo
+enddo
+do i=1,nx
+  temp(i,ny) = 0.0d0
+  temp(i,1) =  1.0d0
 enddo
 !##########################################################
 ! End fields init
 !##########################################################
-
+! write input field (for debug)
+open(unit=55,file='t0.dat',form='unformatted',position='append',access='stream',status='new')
+write(55) temp(:,:)
+close(55)
 
 
 
@@ -181,6 +182,7 @@ do t=1,ntmax
   ! Advection + diffusion term
   umax=0.0d0 ! replace then with real vel max
   gamma=1.0d0*umax
+  !$acc parallel loop collapse(2)
   do j=2,ny-1
     do i=1,nx
       ip=i+1
@@ -203,6 +205,7 @@ do t=1,ntmax
   enddo
 
   ! compute sharpening (then move to ACDI)
+  !$acc kernels
   do i=1,nx
     do j=2,ny-1
       ip=i+1
@@ -215,21 +218,26 @@ do t=1,ntmax
                                      ((phi(i,jp)**2.d0-phi(i,jp))*normy(i,jp) - (phi(i,jm)**2.d0-phi(i,jm))*normy(i,jm))*0.5*dyi)
     enddo
   enddo
+  !$acc end kernels
 
   ! phase-field n+1 (Euler explicit)
+  !$acc kernels
   do i=1,nx
     do j=2,ny-1
-      !phi(i,j) = phi(i,j)  + dt*rhsphi(i,j);
+      phi(i,j) = phi(i,j)  + dt*rhsphi(i,j);
     enddo
   enddo
+  !$acc end kernels
 
   ! impose BC on the phase-field (no flux at the walls)
+  !$acc kernels
   do i=1,nx
     phi(i,1) = phi(i,2)
     phi(i,ny) = phi(i,ny-1)
   enddo
+  !$acc end kernels
   !write(*,*) "maxphi", maxval(phi)
-  write(*,*) "Phase field", phi(32,32)
+  !write(*,*) "Phase field", phi(32,32)
   !##########################################################
   ! END 1: phase-field n+1 obtained
   !##########################################################
@@ -240,6 +248,7 @@ do t=1,ntmax
   ! STEP 2: Advance temperature field 
   !##########################################################
   ! Advection + diffusion (one loop, faster on GPU)
+  !$acc kernels
   do i=1,nx
     do j=2,ny-1
       ip=i+1
@@ -265,9 +274,10 @@ do t=1,ntmax
   ! impose BC on the temperature field
   ! Top wall hot and bottom wall cold
   do i=1,nx
-    temp(i,1) = 1.0d0
-    temp(i,ny) = -1.0d0
+    temp(i,1) =  1.0d0
+    temp(i,ny) = 0.0d0
   enddo
+  !$acc end kernels
   write(*,*) "End temperature"
   !##########################################################
   ! END 2: Temperature an n+1 obtained
@@ -284,6 +294,7 @@ do t=1,ntmax
   ! START 3A: Projection step for NS
   !##########################################################
   ! Advection + diffusion
+  !$acc kernels
   do j=2,ny
     do i=1,nx
       ip=i+1
@@ -312,12 +323,14 @@ do t=1,ntmax
       h22 = mu*(v(i,jp)-2.d0*v(i,j)+v(i,jm))*ddxi
       rhsu(i,j)=rhsu(i,j)+(h11+h12)*rhoi
       rhsv(i,j)=rhsv(i,j)+(h21+h22)*rhoi
+      ! add buoyancy term
+      rhsv(i,j)=rhsv(i,j) + temp(i,j)+temp(i,jm)
     enddo
   enddo
-
-  ! add buoyancy term
+  !$acc end kernels
 
   ! Compute surface tension forces 
+  !$acc kernels
   do j=2,ny-1
     do i=1,nx
       ip=i+1
@@ -331,7 +344,9 @@ do t=1,ntmax
       fyst(i,j)=6.d0*sigma*chempot*0.5d0*(phi(i,jp)-phi(i,jm))*dxi
     enddo
   enddo
+  !$acc end kernels
 
+  !$acc kernels
   ! Add surface tension forces to RHS (do not merge with above!)
   do j=2,ny-1
     do i=1,nx
@@ -342,6 +357,7 @@ do t=1,ntmax
       rhsv(i,j)=rhsv(i,j)+0.5d0*(fyst(i,jm)+fyst(i,j))*rhoi
     enddo
   enddo
+  !$acc end kernels
 
 
   ! write surface tension forces (debug only)
@@ -350,6 +366,7 @@ do t=1,ntmax
  ! close(55)
 
   ! find u, v and w star (AB2), overwrite u,v and w
+  !$acc kernels
   do j=2,ny
     do i=1,nx
       u(i,j) = u(i,j) + dt*(alpha*rhsu(i,j))!-beta*rhsu_o(i,j))
@@ -358,20 +375,24 @@ do t=1,ntmax
       !rhsv_o(i,j)=rhsv(i,j)
     enddo
   enddo
+  !$acc end kernels
 
   ! change after first loop AB2 coefficients
   alpha=1.5d0
   beta= 0.5d0
 
   !impose BCs on the flow field
+  !$acc kernels
   do i=1,nx
     u(i,1)=0.d0
     u(i,ny)=0.0d0
     v(i,1)=0.0d0
     v(i,ny+1)=0.0d0
   enddo
+  !$acc end kernels
 
   ! Compute rhs of Poisson equation div*ustar: divergence at cell center 
+  !$acc kernels
   do j=1,ny-1
     do i=1,nx
       ip=i+1
@@ -381,6 +402,7 @@ do t=1,ntmax
       rhsp(i,j) = rhsp(i,j) + (rho*dxi/dt)*(v(i,jp)-v(i,j))
     enddo
   enddo
+  !$acc end kernels
   !##########################################################
   ! END 3A: Rhs (from projection computed)
   !##########################################################
@@ -473,6 +495,7 @@ do t=1,ntmax
   !##########################################################
   !START 3C: Start correction step
   !##########################################################
+  !$acc kernels
   do j=1,ny-1
     do i=1,nx
       im=i-1
@@ -480,7 +503,6 @@ do t=1,ntmax
       if (im < 1) im=nx
       u(i,j)=u(i,j) - dt/rho*(p(i,j)-p(im,j))*dxi
       v(i,j)=v(i,j) - dt/rho*(p(i,j)-p(i,jm))*dxi
-      um=
     enddo
   enddo
 
@@ -491,6 +513,7 @@ do t=1,ntmax
     v(i,1)=0.0d0
     v(i,ny+1)=0.0d0
   enddo
+  !$acc end kernels
   !##########################################################
   !END 3C: End correction step
   !##########################################################
@@ -502,6 +525,20 @@ do t=1,ntmax
 
 
 enddo
+
+! write pressure (debug only)
+open(unit=55,file='tf.dat',form='unformatted',position='append',access='stream',status='new')
+write(55) temp(:,:)
+close(55)
+
+! write pressure (debug only)
+open(unit=55,file='uf.dat',form='unformatted',position='append',access='stream',status='new')
+write(55) u(:,:)
+close(55)
+
+open(unit=55,file='vf.dat',form='unformatted',position='append',access='stream',status='new')
+write(55) v(:,:)
+close(55)
 
 deallocate(x,y)
 !deallocate(a,b,c,d,sol)

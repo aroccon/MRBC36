@@ -2,14 +2,13 @@
 FC = nvfortran
 
 # Compiler flags
-FFLAGS = -fast -gpu=managed -cuda -acc -cudalib -Mfree -Mpreprocess -mcmodel=medium
-#FFLAGS = -fast -gpu=managed -acc -cudalib 
+FFLAGS = -fast -gpu=managed -acc -Mfree -cudalib=cufft -Mpreprocess -mcmodel=medium
 
 # Executable name
 EXEC = nemesi36
 
 # Source files
-SRCS = main.f90
+SRCS = module.f90 main.f90 readwrite.f90
 
 # Libraries
 LIBS    = -L/usr/local/cuda/lib64 -lcufft

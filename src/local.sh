@@ -13,7 +13,7 @@ make
 rm -rf output
 mkdir output
 rm *.o
-rm out.dat
+rm *.dat
 
 #run the code
 ./nemesi36
