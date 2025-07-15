@@ -59,12 +59,14 @@ for i = 1:nx/2+1
     c(1) =  2.0 * dyi^2;
     a(1) =  0.0;
 
+
     % Neumann BC at j = ny (top)
     a(ny) =  2.0 * dyi^2;
     b(ny) = -2.0 * dyi^2 - kx2(i);
     c(ny) =  0.0;
 
-    % Special handling for kx = 0 (mean mode)
+
+       % Special handling for kx = 0 (mean mode)
     if (kx(i) == 0) 
         for j = 1:ny
             pc(i,j) = 0.0d0;
@@ -105,6 +107,7 @@ end
 
 % Inverse FFT
 p = real(ifft(p_hat_full, [], 1));
+
 
 % L2 error ignoring boundaries
 l2norm=0.d0;
@@ -167,51 +170,3 @@ ylabel('y');
 colorbar
 hold off
 
-return
-
-% Read results from Fortran code
-fid = fopen('../in.dat');
-var = fread(fid, nx*ny, 'double');
-fclose(fid);
-rhspf=reshape(var,[nx ny]);
-
-fid = fopen('../out.dat');
-var = fread(fid, nx*ny, 'double');
-fclose(fid);
-pf=reshape(var,[nx ny]);
-
-
-subplot(2,4,5)
-contourf(x, y, rhspf', 30, 'EdgeColor', 'none');
-hold on
-title('RHS - Fortran'); 
-xlabel('x'); 
-ylabel('y');
-colorbar
-hold off
-
-subplot(2,4,6)
-contourf(x, y, pf', 30, 'EdgeColor', 'none');
-hold on
-title('Numerical - Fortran'); 
-xlabel('x'); 
-ylabel('y');
-colorbar
-hold off
-
-subplot(2,4,7)
-contourf(x, y, pext', 30, 'EdgeColor', 'none');
-title('Analytical'); 
-xlabel('x'); 
-ylabel('y');
-colorbar
-hold off
-
-subplot(2,4,8)
-contourf(x, y, (pf-pext)', 30, 'EdgeColor', 'none');
-hold on
-title('Numerical - Fortran'); 
-xlabel('x'); 
-ylabel('y');
-colorbar
-hold off

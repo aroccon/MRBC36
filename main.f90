@@ -6,41 +6,41 @@ use iso_c_binding
 use openacc 
 
 implicit none
-integer, parameter :: nx=64, ny=64
+integer, parameter :: nx=128, ny=64
 double precision, parameter :: pi=3.141592653589793d0
 double precision :: dx, dy, lx, ly, acoeff, q, l2norm, err, dyi, factor
 integer :: i, j, k, n, m, t
 integer :: ip,im,jp,jm
 double precision, allocatable :: x(:), y(:), kx(:), kx2(:)
-double precision, allocatable :: u(:,:),  v(:,:), rhsu(:,:), rhsv(:,:)
+double precision, allocatable :: u(:,:),  v(:,:), rhsu(:,:), rhsv(:,:), rhsu_o(:,:), rhsv_o(:,:)
 double precision, allocatable :: rhsp(:,:),  p(:,:), pext(:,:)
-double precision, allocatable :: rhsphi(:,:), phi(:,:), normx(:,:), normy(:,:)
+double precision, allocatable :: rhsphi(:,:), phi(:,:), normx(:,:), normy(:,:), fxst(:,:), fyst(:,:)
 double precision, allocatable :: rhstemp(:,:), temp(:,:)
 double complex, allocatable :: rhspc(:,:), pc(:,:), rhs(:)
-double complex :: a(ny), b(ny), c(ny), d(ny), sol(ny)
+double complex :: a(ny), b(ny), c(ny), d(ny), sol(ny), meanp(ny)
 integer :: planf, planb, status, ntmax
-double precision :: radius, eps, epsi, gamma, rho, mu, sigma, dxi, ddxi, ddyi, normod, dt, umax
-double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, rhoi
+double precision :: radius, eps, epsi, gamma, rho, mu, dxi, ddxi, ddyi, normod, dt, umax
+double precision :: chempot, sigma
+double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, rhoi, alpha, beta
 
 !##########################################################
 ! declare parameters
 ! Define some basic quantities
-ntmax=10
+ntmax=1
 radius=0.5d0
 epsratio=1.0d0
 gamma=0.0d0
-rho=1.d0
-mu=1.d0
-sigma=0.d0
+sigma=0.1d0
 radius=0.3d0
 difftemp=0.01d0
 rho=1.d0
+mu=0.001d0
 ! Define domain size
-lx = 1.d0
+lx = 2.d0
 ly = 1.d0
-! Grid spacing: dx divided by nx to have perfect periodicity
+! Grid spacing: dx divided by nx to have perfect periodicity, same for ny
 dx = lx/nx 
-dy = ly/(ny-1)
+dy = ly/ny
 dxi=1.d0/dx
 dyi=1.d0/dy
 ddxi=dxi*dxi
@@ -48,8 +48,9 @@ ddyi=dyi*dyi
 dt=0.0001
 eps=max(dx,dy)
 epsi=1.d0/eps
-rho=1.d0/rhoi
-mu=0.001d0
+rhoi=1.d0/rho
+alpha=1.d0
+beta=0.0d0
 
 !#define phiflag 0
 !#define tempflag 0
@@ -68,10 +69,12 @@ allocate(kx2(nx/2+1))
 ! velocity variables (defined on cell faces)
 allocate(u(nx,ny),v(nx,ny+1))
 allocate(rhsu(nx,ny),rhsv(nx,ny+1))
+allocate(rhsu_o(nx,ny),rhsv_o(nx,ny+1))
 
 ! phase-field variables (defined on centers)
 allocate(phi(nx,ny),rhsphi(nx,ny))
 allocate(normx(nx,ny),normy(nx,ny))
+allocate(fxst(nx,ny),fyst(nx,ny))
 
 ! temperature variables (defined on centers)
 allocate(temp(nx,ny),rhstemp(nx,ny))
@@ -83,9 +86,11 @@ write(*,*) "NEMESI36"
 write(*,*) "Code for 2D phase-field simulation in RB configuration"
 write(*,*) "Grid.     :", nx, ny
 write(*,*) "Lx and Ly :", lx, ly
-write(*,*) "Dx and Dy :", dx, dy
-write(*,*) "Time step :", dt
-write(*,*) "eps       :", eps
+write(*,*) "Dx and Dy  :", dx, dy
+write(*,*) "Time step  :", dt
+write(*,*) "eps        :", eps
+write(*,*) "Density   :", rho
+write(*,*) "Surf. ten :", sigma
 
 ! Parameters for test solution (debug only)
 !n= 1
@@ -261,7 +266,7 @@ do t=1,ntmax
   ! START 3A: Projection step for NS
   !##########################################################
 
-  ! Advection
+  ! Advection + diffusion
   do j=2,ny
     do i=1,nx
       ip=i+1
@@ -293,16 +298,80 @@ do t=1,ntmax
     enddo
   enddo
 
+  ! add buoyancy term
+
+  ! Compute surface tension forces 
+  do j=2,ny-1
+    do i=1,nx
+      ip=i+1
+      im=i-1
+      jp=j+1
+      jm=j-1
+      if (ip .gt. nx) ip=1
+      if (im .lt. 1) im=nx
+      chempot=phi(i,j)*(1.d0-phi(i,j))*(1.d0-2.d0*phi(i,j))*epsi-eps*(phi(ip,j)+phi(im,j)+phi(i,jp)+phi(i,jm)- 4.d0*phi(i,j))*ddxi
+      fxst(i,j)=6.d0*sigma*chempot*0.5d0*(phi(ip,j)-phi(im,j))*dxi
+      fyst(i,j)=6.d0*sigma*chempot*0.5d0*(phi(i,jp)-phi(i,jm))*dxi
+    enddo
+  enddo
+
+  ! Add surface tension forces to RHS (do not merge with above!)
+  do j=2,ny-1
+    do i=1,nx
+      im=i-1
+      jm=j-1
+      if (im .lt. 1) im=nx
+      rhsu(i,j)=rhsu(i,j)+0.5d0*(fxst(im,j)+fxst(i,j))*rhoi
+      rhsv(i,j)=rhsv(i,j)+0.5d0*(fyst(i,jm)+fyst(i,j))*rhoi
+    enddo
+  enddo
 
 
+  ! write surface tension forces (debug only)
+ ! open(unit=55,file='out.dat',form='unformatted',position='append',access='stream',status='new')
+ ! write(55) fyst(:,:)
+ ! close(55)
+
+  ! find u, v and w star (AB2), overwrite u,v and w
+  do j=2,ny
+    do i=1,nx
+      u(i,j) = u(i,j) + dt*(alpha*rhsu(i,j))!-beta*rhsu_o(i,j))
+      v(i,j) = v(i,j) + dt*(alpha*rhsv(i,j))!-beta*rhsv_o(i,j))
+      !rhsu_o(i,j)=rhsu(i,j)
+      !rhsv_o(i,j)=rhsv(i,j)
+    enddo
+  enddo
+
+  ! change after first loop AB2 coefficients
+  alpha=1.5d0
+  beta= 0.5d0
+
+  !impose BCs on the flow field
+  do i=1,nx
+    u(i,1)=0.d0
+    u(i,ny)=0.0d0
+    v(i,1)=0.0d0
+    v(i,ny+1)=0.0d0
+  enddo
+
+  ! Compute rhs of Poisson equation div*ustar: divergence at cell center 
+  do j=1,ny-1
+    do i=1,nx
+      ip=i+1
+      jp=j+1
+      if (ip .gt. nx) ip=1
+      rhsp(i,j) =             (rho*dxi/dt)*(u(ip,j)-u(i,j))
+      rhsp(i,j) = rhsp(i,j) + (rho*dxi/dt)*(v(i,jp)-v(i,j))
+    enddo
+  enddo
   !##########################################################
   ! END 3A: Rhs (from projection computed)
   !##########################################################
 
+
   !##########################################################
   ! 3B Start of Poisson solver, pressure in physical space obtained
   !##########################################################
-
   ! === Execute Forward FFT ===
   !$acc data copy(rhsp,rhspc)
   !$acc host_data use_device(rhsp,rhspc)
@@ -336,11 +405,12 @@ do t=1,ntmax
     c(ny) =  0.0d0
 
     ! Special handling for kx=0 (mean mode)
-    if (kx(i) == 0.0d0) then
-      do j = 1, ny
-          pc(i,j) = 0.0d0
-      end do
-    else
+    ! fix pressure on one point (otherwise is zero mean along y)
+    if (i == 1) then
+        b(1) = 1.0d0
+        c(1) = 0.0d0
+        d(1) = 0.0d0
+    endif
     ! Thomas algorithm (TDMA) for tridiagonal system 
     ! Forward sweep
     do j = 2, ny
@@ -359,7 +429,6 @@ do t=1,ntmax
     do j = 1, ny
       pc(i,j) = sol(j)
     end do
-    end if
   end do
   !$acc end kernels
 
@@ -377,7 +446,7 @@ do t=1,ntmax
 
   ! write pressure (debug only)
   !open(unit=55,file='out.dat',form='unformatted',position='append',access='stream',status='new')
-  !write(55) phi(:,:)
+  !write(55) p(:,:)
   !close(55)
   !##########################################################
   !End STEP 3B of Poisson solver, pressure in physical space obtained
@@ -399,6 +468,7 @@ enddo
 deallocate(x,y)
 !deallocate(a,b,c,d,sol)
 deallocate(kx,kx2)
+deallocate(fxst,fyst,rhsu,rhsv,rhsu_o,rhsv_o)
 deallocate(rhsp,p,rhspc)
 
 end program main
