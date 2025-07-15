@@ -167,6 +167,7 @@ ylabel('y');
 colorbar
 hold off
 
+return
 
 % Read results from Fortran code
 fid = fopen('../in.dat');

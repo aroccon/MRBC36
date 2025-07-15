@@ -13,3 +13,9 @@
 - Introduced phi ✅ 
 - Introduced temperature ✅ 
 - Introduced temporal loop ✅ 
+
+
+## Grid points (staggered)
+
+![Test](doc/grid.png)
+
