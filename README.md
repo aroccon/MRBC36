@@ -20,7 +20,7 @@
 - RB setup
 - GPU offloading of entire code (only Poisson ATM)
 
-## Grid p🚧oints (staggered)
+## Grid points (staggered)
 
 ![Test](doc/grid.png)
 
