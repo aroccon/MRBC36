@@ -7,9 +7,10 @@ use openacc
 use velocity
 use phase
 use temperature
+use nvtx
 
 implicit none
-integer, parameter :: nx=128, ny=64
+integer, parameter :: nx=512, ny=256
 double precision, parameter :: pi=3.141592653589793d0
 double precision :: dx, dy, lx, ly, acoeff, q, l2norm, err, dyi, factor
 integer :: i, j, k, n, m, t
@@ -28,17 +29,17 @@ double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, r
 !##########################################################
 ! declare parameters
 ! Define some basic quantities
-ntmax=30000
+ntmax=100000
 t=0
-dump=1000
+dump=10000
 radius=0.5d0
 epsratio=1.0d0
 gamma=0.0d0
-sigma=0.0d0
+sigma=0.1d0
 radius=0.3d0
-difftemp=7.0711e-04 ! sqrt(Ra) with Ra=2e6 
+difftemp=1.0711e-04 ! sqrt(Ra) with Ra=2e6 
 rho=1.d0
-mu=7.0711e-04 ! sqrt(1/Ra) with Ra=2e6 
+mu=1.0711e-04 ! sqrt(1/Ra) with Ra=2e6 
 ! Define domain size
 lx = 2.d0
 ly = 1.d0
@@ -49,7 +50,7 @@ dxi=1.d0/dx
 dyi=1.d0/dy
 ddxi=dxi*dxi
 ddyi=dyi*dyi
-dt=0.001
+dt=0.0001
 eps=max(dx,dy)
 epsi=1.d0/eps
 rhoi=1.d0/rho
@@ -136,7 +137,7 @@ write(*,*) "Initialize velocity, temperature and phase-field"
 ! u velocity
 do i=1,nx
   do j=1,ny
-    u(i,j)=sin(pi*(x(i)-dx/2))*cos(pi*(y(j)+dy/2))
+    u(i,j)=sin(1.3d0*pi*(x(i)-dx/2))*cos(pi*(y(j)+dy/2))
   enddo
 enddo
 ! v velocity
@@ -301,7 +302,7 @@ do t=1,ntmax
 
 
 
-
+  call nvtxStartRange("NS")
   !##########################################################
   ! START 3A: Projection step for NS
   !##########################################################
@@ -423,8 +424,9 @@ do t=1,ntmax
   !##########################################################
   ! END 3A: Rhs (from projection computed)
   !##########################################################
+  call nvtxEndRange
 
-
+  call nvtxStartRange("Poisson")
   !##########################################################
   ! 3B Start of Poisson solver, pressure in physical space obtained
   !##########################################################
@@ -436,7 +438,7 @@ do t=1,ntmax
   !$acc end data
   if (status.ne.0) stop "cufftExecD2Z failed"
 
-  !$acc kernels
+  !$acc parallel loop gang private(a, b, c, d, sol, factor)
   do i=1,nx/2+1
     ! Set up tridiagonal system for each kx
     ! The system is: (A_j) * pc(kx,j-1) + (B_j) * pc(kx,j) + (C_j) * pc(kx,j+1) = rhs(kx,j)
@@ -486,7 +488,7 @@ do t=1,ntmax
       pc(i,j) = sol(j)
     end do
   end do
-  !$acc end kernels
+  !!$acc end kernels
 
   ! === Execute Backward FFT ===
   !$acc data copy(pc,p)
@@ -507,8 +509,8 @@ do t=1,ntmax
   !##########################################################
   !End STEP 3B of Poisson solver, pressure in physical space obtained
   !##########################################################
-
-
+  call nvtxEndRange
+  
   !##########################################################
   !START 3C: Start correction step
   !##########################################################

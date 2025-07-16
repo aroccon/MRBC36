@@ -2,16 +2,13 @@
 FC = nvfortran
 
 # Compiler flags
-FFLAGS = -fast -gpu=managed -acc -Mfree -cudalib=cufft -Mpreprocess -mcmodel=medium
-
-# Executable name
-EXEC = nemesi36
+#FFLAGS = -fast -gpu=managed  -acc -Mfree -cuda -Mpreprocess -mcmodel=medium
+FFLAGS = -fast -gpu=managed -acc -Mfree -Mpreprocess -mcmodel=medium
+LIBS    = -L/usr/local/cuda/lib64 -cudalib=cufft   -lcufft -lnvToolsExt
 
 # Source files
 SRCS = module.f90 main.f90 readwrite.f90
-
-# Libraries
-LIBS    = -L/usr/local/cuda/lib64 -lcufft
+EXEC = nemesi36
 
 # Object files
 OBJS = $(SRCS:.f90=.o)
@@ -22,7 +19,7 @@ OBJS = $(SRCS:.f90=.o)
 
 # Rule to link object files into executable
 $(EXEC): $(OBJS)
-	$(FC) $(FFLAGS) -o $@ $^
+	$(FC) $(FFLAGS) -o $@ $^ $(LIBS)
 
 # Clean rule
 clean:

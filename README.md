@@ -20,7 +20,13 @@
 - RB setup 🚧
 - GPU offloading of entire code (only Poisson ATM) ✅
 
+## RBC 
+
+![Test](doc/rbc.png)
+
+
 ## Grid points (staggered)
 
 ![Test](doc/grid.png)
+
 
