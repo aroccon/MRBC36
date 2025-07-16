@@ -23,7 +23,7 @@
 
 ## RBC (Ra=1e8)
 
-![Test](doc/rbc.png)
+![Test](doc/rbc2.png)
 
 
 ## Grid points (staggered)
