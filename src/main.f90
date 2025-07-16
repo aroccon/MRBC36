@@ -17,16 +17,20 @@ integer :: ip,im,jp,jm
 double precision, allocatable :: x(:), y(:), kx(:), kx2(:)
 double complex :: a(ny), b(ny), c(ny), d(ny), sol(ny), meanp(ny)
 integer :: planf, planb, status, ntmax, dump
-double precision :: radius, eps, epsi, gamma, rho, mu, dxi, ddxi, ddyi, normod, dt, umax
-double precision :: chempot, sigma
+double precision :: radius, eps, epsi, gamma, rho, mu, dxi, ddxi, ddyi, normod, dt
+double precision :: umax=0.0d0, vmax=0.d0
+double precision :: chempot, sigma, cflx, cfly
 double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, rhoi, alpha, beta
+
+#define phiflag 0
+#define tempflag 0
 
 !##########################################################
 ! declare parameters
 ! Define some basic quantities
-ntmax=100
+ntmax=10000
 t=0
-dump=10
+dump=1000
 radius=0.5d0
 epsratio=1.0d0
 gamma=0.0d0
@@ -34,7 +38,7 @@ sigma=0.0d0
 radius=0.3d0
 difftemp=7.0711e-04 ! sqrt(Ra) with Ra=2e6 
 rho=1.d0
-mu=7.0711e-04 ! sqrt(1/Ra) with Ra=2e6 
+mu=0.001 ! sqrt(1/Ra) with Ra=2e6 
 ! Define domain size
 lx = 2.d0
 ly = 1.d0
@@ -45,18 +49,17 @@ dxi=1.d0/dx
 dyi=1.d0/dy
 ddxi=dxi*dxi
 ddyi=dyi*dyi
-dt=0.0001
+dt=0.001
 eps=max(dx,dy)
 epsi=1.d0/eps
 rhoi=1.d0/rho
 alpha=1.d0
 beta=0.0d0
 
-!#define phiflag 0
-!#define tempflag 0
+
 
 !assign the code to one GPU
-call acc_set_device_num(1,acc_device_nvidia)
+call acc_set_device_num(0,acc_device_nvidia)
 
 !########################################################
 ! allocate variables (avoid allocate/deallocate at run time)
@@ -96,9 +99,9 @@ write(*,*) "Surf. ten :", sigma
 !n= 1
 !m= 2
 !acoeff= -1.d0/((n*n + (2*pi*m/ly)**2))
-! Compute axis
-x(1)=0.d0
-y(1)=0.d0
+! Compute axis (position of cell centers)
+x(1)=dx/2
+y(1)=dy/2
 do i=1,nx-1
   x(i+1)=x(i) + dx
 enddo
@@ -108,7 +111,7 @@ enddo
 
 ! --- Wavenumbers and squares ---
 do i = 1,nx/2+1
-  kx(i) = (i-1)*(2*pi/Lx)
+  kx(i) = (i-1)*(2.d0*pi/lx)
   kx2(i) = kx(i)**2
 end do
 
@@ -152,7 +155,7 @@ enddo
 ! temperature (internal + boundaries)
 do j=2,ny-1
   do i=1,nx
-    temp(i,j)=0.d0
+    temp(i,j)=1.0d0-y(j)
   enddo
 enddo
 do i=1,nx
@@ -163,8 +166,12 @@ enddo
 call writefield(t,1)
 call writefield(t,2)
 call writefield(t,3)
+#if phiflag == 1
 call writefield(t,4)
+#endif
+# if tempflag == 1
 call writefield(t,5)
+#endif
 !##########################################################
 ! End fields init
 !##########################################################
@@ -180,16 +187,16 @@ write(*,*) "Start temporal loop"
 do t=1,ntmax
   call cpu_time(times)
   write(*,*) "Time step",t,"of",ntmax
+  #if phiflag == 1
   !##########################################################
   ! START 1: Advance phase-field 
   !##########################################################
   ! Advection + diffusion term
-  umax=0.0d0 ! replace then with real vel max
-  gamma=1.0d0*umax
+  gamma=1.0d0*max(umax,vmax)
   do j=2,ny-1
     do i=1,nx
       ip=i+1
-      im=im-1
+      im=i-1
       jp=j+1
       jm=j-1
       if (ip .gt. nx) ip=1
@@ -206,13 +213,13 @@ do t=1,ntmax
       normy(i,j) = normy(i,j)*normod 
     enddo
   enddo
-
+  write(*,*) "209"
   ! compute sharpening (then move to ACDI)
   !$acc kernels
   do i=1,nx
     do j=2,ny-1
       ip=i+1
-      im=im-1
+      im=i-1
       jp=j+1
       jm=j-1
       if (ip .gt. nx) ip=1
@@ -239,6 +246,7 @@ do t=1,ntmax
     phi(i,ny) = phi(i,ny-1)
   enddo
   !$acc end kernels
+  #endif
   !write(*,*) "maxphi", maxval(phi)
   !write(*,*) "Phase field", phi(32,32)
   !##########################################################
@@ -250,12 +258,13 @@ do t=1,ntmax
   !##########################################################
   ! STEP 2: Advance temperature field 
   !##########################################################
+  #if tempflag == 1
   ! Advection + diffusion (one loop, faster on GPU)
   !$acc kernels
   do i=1,nx
     do j=2,ny-1
       ip=i+1
-      im=im-1
+      im=i-1
       jp=j+1
       jm=j-1
       if (ip .gt. nx) ip=1
@@ -281,6 +290,7 @@ do t=1,ntmax
     temp(i,ny) = 0.0d0
   enddo
   !$acc end kernels
+  #endif
   !##########################################################
   ! END 2: Temperature an n+1 obtained
   !##########################################################
@@ -297,10 +307,10 @@ do t=1,ntmax
   !##########################################################
   ! Advection + diffusion
   !$acc kernels
-  do j=2,ny
+  do j=2,ny-1
     do i=1,nx
       ip=i+1
-      im=im-1
+      im=i-1
       jp=j+1
       jm=j-1
       if (ip .gt. nx) ip=1
@@ -326,12 +336,17 @@ do t=1,ntmax
       rhsu(i,j)=rhsu(i,j)+(h11+h12)*rhoi
       rhsv(i,j)=rhsv(i,j)+(h21+h22)*rhoi
       ! add buoyancy term
+      #if tempflag == 1
       rhsv(i,j)=rhsv(i,j) + temp(i,j)+temp(i,jm)
+      #endif
+      ! channel pressure driven (along x)
+      rhsu(i,j)=rhsu(i,j) + 1.d0
     enddo
   enddo
   !$acc end kernels
 
   ! Compute surface tension forces 
+  #if phiflag == 1
   !$acc kernels
   do j=2,ny-1
     do i=1,nx
@@ -350,22 +365,17 @@ do t=1,ntmax
 
   !$acc kernels
   ! Add surface tension forces to RHS (do not merge with above!)
-  do j=2,ny-1
+  do j=2,ny
     do i=1,nx
       im=i-1
       jm=j-1
       if (im .lt. 1) im=nx
-      !rhsu(i,j)=rhsu(i,j)+0.5d0*(fxst(im,j)+fxst(i,j))*rhoi
-      !rhsv(i,j)=rhsv(i,j)+0.5d0*(fyst(i,jm)+fyst(i,j))*rhoi
+      rhsu(i,j)=rhsu(i,j)+0.5d0*(fxst(im,j)+fxst(i,j))*rhoi
+      rhsv(i,j)=rhsv(i,j)+0.5d0*(fyst(i,jm)+fyst(i,j))*rhoi
     enddo
   enddo
   !$acc end kernels
-
-
-  ! write surface tension forces (debug only)
- ! open(unit=55,file='out.dat',form='unformatted',position='append',access='stream',status='new')
- ! write(55) fyst(:,:)
- ! close(55)
+  #endif
 
   ! find u, v and w star (AB2), overwrite u,v and w
   !$acc kernels
@@ -379,9 +389,14 @@ do t=1,ntmax
   enddo
   !$acc end kernels
 
+  ! write pressure (debug only)
+  !open(unit=55,file='output/u.dat',form='unformatted',position='append',access='stream',status='new')
+  !write(55) u
+  !close(55)
+
   ! change after first loop AB2 coefficients
-  alpha=1.5d0
-  beta= 0.5d0
+  !alpha=1.0d0
+  !beta= 0.0d0
 
   !impose BCs on the flow field
   !$acc kernels
@@ -395,7 +410,7 @@ do t=1,ntmax
 
   ! Compute rhs of Poisson equation div*ustar: divergence at cell center 
   !$acc kernels
-  do j=1,ny-1
+  do j=1,ny
     do i=1,nx
       ip=i+1
       jp=j+1
@@ -446,7 +461,7 @@ do t=1,ntmax
     c(ny) =  0.0d0
 
     ! Special handling for kx=0 (mean mode)
-    ! fix pressure on one point (otherwise is zero mean along y)
+    ! fix pressure on one point (otherwise is zero mean along x)
     if (i == 1) then
         b(1) = 1.0d0
         c(1) = 0.0d0
@@ -498,6 +513,8 @@ do t=1,ntmax
   !START 3C: Start correction step
   !##########################################################
   !$acc kernels
+  umax=0.d0
+  vmax=0.d0
   do j=1,ny-1
     do i=1,nx
       im=i-1
@@ -505,8 +522,17 @@ do t=1,ntmax
       if (im < 1) im=nx
       u(i,j)=u(i,j) - dt/rho*(p(i,j)-p(im,j))*dxi
       v(i,j)=v(i,j) - dt/rho*(p(i,j)-p(i,jm))*dxi
+      umax=max(umax,u(i,j))
+      vmax=max(vmax,v(i,j))
     enddo
   enddo
+
+  cflx=umax*dt/dx
+  cfly=vmax*dt/dy
+  write(*,*) "umax:", umax
+  write(*,*) "vmax:", vmax
+  write(*,*) "CFL number:", max(cflx,cfly)
+
 
   ! re-impose BCs on the flow field
   do i=1,nx
@@ -532,11 +558,20 @@ do t=1,ntmax
 	  call writefield(t,1)
 	  call writefield(t,2)
 	  call writefield(t,3)
+    #if phiflag == 1
     call writefield(t,4)
+    #endif
+    #if tempflag == 1
 	  call writefield(t,5)
+    #endif
   endif
 
 enddo
+
+  ! write pressure (debug only)
+  !open(unit=55,file='output/rhsp.dat',form='unformatted',position='append',access='stream',status='new')
+  !write(55) rhsp(:,:)
+  !close(55)
 
 deallocate(x,y)
 !deallocate(a,b,c,d,sol)

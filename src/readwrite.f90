@@ -47,7 +47,7 @@ close(55)
 endif
 
 if (fieldn .eq. 5) then
-write(namefile,'(a,i8.8,a)') './output/temp_',t,'.dat'
+write(namefile,'(a,i8.8,a)') './output/t_',t,'.dat'
 open(unit=55,file=namefile,form='unformatted',position='append',access='stream',status='new')
 write(55) temp
 close(55)
@@ -107,7 +107,7 @@ close(55)
 endif
 
 if (fieldn .eq. 5) then
-write(namefile,'(a,i8.8,a)') './init/phi.dat'
+write(namefile,'(a,i8.8,a)') './init/t.dat'
 open(unit=55,file=namefile,form='unformatted',access='stream',status='old',convert='little_endian')
 read(55) temp
 close(55)
@@ -165,7 +165,7 @@ close(55)
 endif
 
 if (fieldn .eq. 5) then
-write(namefile,'(a,i8.8,a)') './output/temp_',t,'.dat'
+write(namefile,'(a,i8.8,a)') './output/t_',t,'.dat'
 open(unit=55,file=namefile,form='unformatted',access='stream',status='old',convert='little_endian')
 read(55) temp
 close(55)
