@@ -28,7 +28,7 @@ double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, r
 !##########################################################
 ! declare parameters
 ! Define some basic quantities
-ntmax=10000
+ntmax=20000
 t=0
 dump=1000
 radius=0.5d0
@@ -38,7 +38,7 @@ sigma=0.0d0
 radius=0.3d0
 difftemp=7.0711e-04 ! sqrt(Ra) with Ra=2e6 
 rho=1.d0
-mu=0.001 ! sqrt(1/Ra) with Ra=2e6 
+mu=0.01 ! sqrt(1/Ra) with Ra=2e6 
 ! Define domain size
 lx = 2.d0
 ly = 1.d0
@@ -49,7 +49,7 @@ dxi=1.d0/dx
 dyi=1.d0/dy
 ddxi=dxi*dxi
 ddyi=dyi*dyi
-dt=0.001
+dt=0.002
 eps=max(dx,dy)
 epsi=1.d0/eps
 rhoi=1.d0/rho
