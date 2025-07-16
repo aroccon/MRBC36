@@ -16,9 +16,9 @@
 - Navier-Stokes solution ✅ 
 - Validation (phi) 🚧 
 - Validation (temp) 🚧
-- Validation (NS) 🚧
-- RB setup
-- GPU offloading of entire code (only Poisson ATM)
+- Validation (NS): Channel flow (laminar + moving top wall) ✅
+- RB setup 🚧
+- GPU offloading of entire code (only Poisson ATM) ✅
 
 ## Grid points (staggered)
 

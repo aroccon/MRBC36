@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 nx, ny = 128, 64
 
-data = np.fromfile('output/u_00020000.dat', dtype=np.float64)  # or float64
+data = np.fromfile('output/t_00001000.dat', dtype=np.float64)  # or float64
 print("Data size:", data.size)
 data = data.reshape((ny, nx))  # rows = y, columns = x
 

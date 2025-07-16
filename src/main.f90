@@ -23,12 +23,12 @@ double precision :: chempot, sigma, cflx, cfly
 double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, rhoi, alpha, beta
 
 #define phiflag 0
-#define tempflag 0
+#define tempflag 1
 
 !##########################################################
 ! declare parameters
 ! Define some basic quantities
-ntmax=20000
+ntmax=30000
 t=0
 dump=1000
 radius=0.5d0
@@ -38,7 +38,7 @@ sigma=0.0d0
 radius=0.3d0
 difftemp=7.0711e-04 ! sqrt(Ra) with Ra=2e6 
 rho=1.d0
-mu=0.01 ! sqrt(1/Ra) with Ra=2e6 
+mu=7.0711e-04 ! sqrt(1/Ra) with Ra=2e6 
 ! Define domain size
 lx = 2.d0
 ly = 1.d0
@@ -49,7 +49,7 @@ dxi=1.d0/dx
 dyi=1.d0/dy
 ddxi=dxi*dxi
 ddyi=dyi*dyi
-dt=0.002
+dt=0.001
 eps=max(dx,dy)
 epsi=1.d0/eps
 rhoi=1.d0/rho
@@ -136,13 +136,13 @@ write(*,*) "Initialize velocity, temperature and phase-field"
 ! u velocity
 do i=1,nx
   do j=1,ny
-    u(i,j)=0.0d0
+    u(i,j)=sin(pi*(x(i)-dx/2))*cos(pi*(y(j)+dy/2))
   enddo
 enddo
 ! v velocity
 do i=1,nx
   do j=1,ny-1
-    v(i,j)=0.0d0
+    v(i,j)=-cos(pi*(x(i)))*sin(pi*(y(j)-dy/2))
   enddo
 enddo
 ! phase-field
@@ -340,7 +340,7 @@ do t=1,ntmax
       rhsv(i,j)=rhsv(i,j) + temp(i,j)+temp(i,jm)
       #endif
       ! channel pressure driven (along x)
-      rhsu(i,j)=rhsu(i,j) + 1.d0
+      !rhsu(i,j)=rhsu(i,j) + 1.d0
     enddo
   enddo
   !$acc end kernels
@@ -381,10 +381,10 @@ do t=1,ntmax
   !$acc kernels
   do j=2,ny
     do i=1,nx
-      u(i,j) = u(i,j) + dt*(alpha*rhsu(i,j))!-beta*rhsu_o(i,j))
-      v(i,j) = v(i,j) + dt*(alpha*rhsv(i,j))!-beta*rhsv_o(i,j))
-      !rhsu_o(i,j)=rhsu(i,j)
-      !rhsv_o(i,j)=rhsv(i,j)
+      u(i,j) = u(i,j) + dt*(alpha*rhsu(i,j)-beta*rhsu_o(i,j))
+      v(i,j) = v(i,j) + dt*(alpha*rhsv(i,j)-beta*rhsv_o(i,j))
+      rhsu_o(i,j)=rhsu(i,j)
+      rhsv_o(i,j)=rhsv(i,j)
     enddo
   enddo
   !$acc end kernels
@@ -395,8 +395,8 @@ do t=1,ntmax
   !close(55)
 
   ! change after first loop AB2 coefficients
-  !alpha=1.0d0
-  !beta= 0.0d0
+  alpha=1.5d0
+  beta= 0.5d0
 
   !impose BCs on the flow field
   !$acc kernels
