@@ -21,7 +21,7 @@
 - GPU offloading of entire code  ✅
 - TDMA optimization (x 10 speed-up)  ✅
 
-## RBC 
+## RBC (Ra=1e8)
 
 ![Test](doc/rbc.png)
 
