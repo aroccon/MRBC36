@@ -27,7 +27,7 @@ Poissono solver based on FFT (along x - periodic) + TDMA (y, walls).
 
 ## RBC (Ra=1e8 + Pr=1)
 
-![Test](doc/rbc2.png)
+![Test](doc/rbc3.png)
 
 ## Performance and resolution tested
 
