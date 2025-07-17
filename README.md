@@ -28,8 +28,8 @@
 
 ## Performance and resolution tested
 
-2048 x 1024 - 22 ms/iter - RTX5000 16GB
-4096 x 2048 - 80 ms/iter - RTX5000 16GB
+- 2048 x 1024 - 22 ms/iter - RTX5000 16GB
+- 4096 x 2048 - 80 ms/iter - RTX5000 16GB
 
 ## Grid points (staggered)
 
