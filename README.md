@@ -1,5 +1,8 @@
-## NEMESI36
-2D code for PFM simulations (WIP)
+## Multiphase Rayleigh-Benard 
+2D code for Phase-field simulation in Rayleigh-Bénard configurtion 
+Finite difference-based 
+Temperature and phase-field fully explicit 
+Poissono solver based on FFT (along x - periodic) + TDMA (y, walls).
 
 
 ## Check list of features implemented (or to be implemented)
