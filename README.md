@@ -25,6 +25,14 @@ Poissono solver based on FFT (along x - periodic) + TDMA (y, walls).
 - TDMA optimization (x 10 speed-up)  ✅
 - Some kernels can be improved (from profile, 1.5x/2.0x overall potential speed-up) 🚧
 
+## Validation  
+- Aspect ratio: 2
+- Ra from 1e3 to 1e8 + Pr=1
+- Grid: 512 x 256
+
+![Test](doc/val.png)
+
+
 ## RBC (Ra=1e8 + Pr=1)
 
 ![Test](doc/rbc3.png)
