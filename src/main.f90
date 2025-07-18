@@ -10,7 +10,7 @@ use temperature
 use nvtx
 
 implicit none
-integer, parameter :: nx=512, ny=256
+integer, parameter :: nx=256, ny=128
 double precision, parameter :: pi=3.141592653589793d0
 double precision :: dx, dy, lx, ly, acoeff, q, l2norm, err, dyi, factor
 integer :: i, j, k, n, m, t
@@ -20,7 +20,7 @@ double complex :: a(ny), b(ny), c(ny), d(ny), sol(ny), meanp(ny)
 integer :: planf, planb, status, ntmax, dump
 double precision :: radius, eps, epsi, gamma, rho, mu, dxi, ddxi, ddyi, normod, dt
 double precision :: umax=0.0d0, vmax=0.d0
-double precision :: chempot, sigma, cflx, cfly
+double precision :: chempot, sigma, cflx, cfly, ra, pr, nut, nub, num, noise
 double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, rhoi, alpha, beta
 
 #define phiflag 0
@@ -29,7 +29,7 @@ double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, r
 !##########################################################
 ! declare parameters
 ! Define some basic quantities
-ntmax=100000
+ntmax=400000
 t=0
 dump=10000
 radius=0.5d0
@@ -37,9 +37,11 @@ epsratio=1.0d0
 gamma=0.0d0
 sigma=0.1d0
 radius=0.3d0
-difftemp=1.0711e-04 ! sqrt(Ra) with Ra=2e6 
+ra=2.e7
+pr=1.d0
+difftemp=sqrt(1.d0/ra)! sqrt(Ra) with Ra=2e6 
 rho=1.d0
-mu=1.0711e-04 ! sqrt(1/Ra) with Ra=2e6 
+mu=sqrt(1.d0/ra) ! sqrt(1/Ra) with Ra=2e6 
 ! Define domain size
 lx = 2.d0
 ly = 1.d0
@@ -50,7 +52,7 @@ dxi=1.d0/dx
 dyi=1.d0/dy
 ddxi=dxi*dxi
 ddyi=dyi*dyi
-dt=0.0001
+dt=0.0002
 eps=max(dx,dy)
 epsi=1.d0/eps
 rhoi=1.d0/rho
@@ -65,7 +67,7 @@ call acc_set_device_num(0,acc_device_nvidia)
 !########################################################
 ! allocate variables (avoid allocate/deallocate at run time)
 allocate(x(nx),y(ny))
-allocate(rhsp(nx,ny),p(nx,ny),pext(nx,ny))
+allocate(rhsp(nx,ny),p(nx,ny))
 allocate(rhspc(nx/2+1,ny),pc(nx/2+1,ny))
 allocate(kx(nx/2+1))
 allocate(kx2(nx/2+1))
@@ -74,6 +76,7 @@ allocate(kx2(nx/2+1))
 allocate(u(nx,ny),v(nx,ny+1))
 allocate(rhsu(nx,ny),rhsv(nx,ny+1))
 allocate(rhsu_o(nx,ny),rhsv_o(nx,ny+1))
+allocate(div(nx,ny))
 
 ! phase-field variables (defined on centers)
 allocate(phi(nx,ny),rhsphi(nx,ny))
@@ -81,7 +84,7 @@ allocate(normx(nx,ny),normy(nx,ny))
 allocate(fxst(nx,ny),fyst(nx,ny))
 
 ! temperature variables (defined on centers)
-allocate(temp(nx,ny),rhstemp(nx,ny))
+allocate(temp(nx,ny),rhstemp(nx,ny),rhstemp_o(nx,ny))
 
 
 !########################################################
@@ -137,13 +140,13 @@ write(*,*) "Initialize velocity, temperature and phase-field"
 ! u velocity
 do i=1,nx
   do j=1,ny
-    u(i,j)=sin(1.3d0*pi*(x(i)-dx/2))*cos(pi*(y(j)+dy/2))
+    u(i,j)=0.d0*sin(1.3d0*pi*(x(i)-dx/2))*cos(pi*(y(j)+dy/2))
   enddo
 enddo
 ! v velocity
 do i=1,nx
   do j=1,ny-1
-    v(i,j)=-cos(pi*(x(i)))*sin(pi*(y(j)-dy/2))
+    v(i,j)=-0.d0*cos(pi*(x(i)))*sin(pi*(y(j)-dy/2))
   enddo
 enddo
 ! phase-field
@@ -156,7 +159,8 @@ enddo
 ! temperature (internal + boundaries)
 do j=2,ny-1
   do i=1,nx
-    temp(i,j)=1.0d0-y(j)
+    call random_number(noise)
+    temp(i,j) = 1.0d0 - y(j) + 0.001d0*(2.0d0*noise - 1.0d0)
   enddo
 enddo
 do i=1,nx
@@ -279,8 +283,9 @@ do t=1,ntmax
 
   ! New temperature field
   do i=1,nx
-    do j=2,ny-1
-      temp(i,j) = temp(i,j)  + dt*rhstemp(i,j);
+    do j=1,ny
+      temp(i,j) = temp(i,j)  + dt*(alpha*rhstemp(i,j)-beta*rhstemp_o(i,j))
+      rhstemp_o(i,j)=rhstemp(i,j)
     enddo
   enddo
 
@@ -290,6 +295,17 @@ do t=1,ntmax
     temp(i,1) =  1.0d0
     temp(i,ny) = 0.0d0
   enddo
+  ! compute bottom and top nusselt numbers
+  nut=0.0d0
+  nub=0.0d0
+  do i=1,nx
+    nut=nut + (temp(i,1)-temp(i,2))/dy
+    nub=nub + (temp(i,ny-1)-temp(i,ny))/dy
+  enddo
+  nut=nut/nx
+  nub=nub/nx
+
+  write(*,*) "Mean nusselt", (nut+nub)/2
   !$acc end kernels
   #endif
   !##########################################################
@@ -517,22 +533,26 @@ do t=1,ntmax
   !$acc kernels
   umax=0.d0
   vmax=0.d0
-  do j=1,ny-1
-    do i=1,nx
+  do i=1,nx
+    ! correct u
+    do j=1,ny
       im=i-1
-      jm=j-1
       if (im < 1) im=nx
       u(i,j)=u(i,j) - dt/rho*(p(i,j)-p(im,j))*dxi
-      v(i,j)=v(i,j) - dt/rho*(p(i,j)-p(i,jm))*dxi
       umax=max(umax,u(i,j))
+    enddo
+    ! correct v
+    do j=2,ny
+      jm=j-1
+      v(i,j)=v(i,j) - dt/rho*(p(i,j)-p(i,jm))*dxi
       vmax=max(vmax,v(i,j))
     enddo
   enddo
 
   cflx=umax*dt/dx
   cfly=vmax*dt/dy
-  write(*,*) "umax:", umax
-  write(*,*) "vmax:", vmax
+  !write(*,*) "umax:", umax
+  !write(*,*) "vmax:", vmax
   write(*,*) "CFL number:", max(cflx,cfly)
 
 
@@ -544,6 +564,19 @@ do t=1,ntmax
     v(i,ny+1)=0.0d0
   enddo
   !$acc end kernels
+
+  !$acc kernels
+  do j=1,ny
+    do i=1,nx
+      ip=i+1
+      jp=j+1
+      if (ip .gt. nx) ip=1
+      div(i,j) =            (u(ip,j)-u(i,j))
+      div(i,j) = div(i,j) + (v(i,jp)-v(i,j))
+    enddo
+  enddo
+  !$acc end kernels
+  ! check divergence
   !##########################################################
   !END 3C: End correction step
   !##########################################################
@@ -570,10 +603,10 @@ do t=1,ntmax
 
 enddo
 
-  ! write pressure (debug only)
-  !open(unit=55,file='output/rhsp.dat',form='unformatted',position='append',access='stream',status='new')
-  !write(55) rhsp(:,:)
-  !close(55)
+  !write pressure (debug only)
+  open(unit=55,file='output/div.dat',form='unformatted',position='append',access='stream',status='new')
+  write(55) div
+  close(55)
 
 deallocate(x,y)
 !deallocate(a,b,c,d,sol)

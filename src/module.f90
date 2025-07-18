@@ -1,6 +1,6 @@
 module velocity
     double precision, allocatable :: u(:,:),  v(:,:), rhsu(:,:), rhsv(:,:), rhsu_o(:,:), rhsv_o(:,:)
-    double precision, allocatable :: rhsp(:,:),  p(:,:), pext(:,:)
+    double precision, allocatable :: rhsp(:,:),  p(:,:), div(:,:)
     double complex, allocatable :: rhspc(:,:), pc(:,:), rhs(:)
 end module velocity
 
@@ -9,7 +9,7 @@ module phase
 end module phase
 
 module temperature
-    double precision, allocatable :: rhstemp(:,:), temp(:,:)
+    double precision, allocatable :: temp(:,:), rhstemp(:,:), rhstemp_o(:,:)
 end module temperature
 
 
