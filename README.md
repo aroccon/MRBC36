@@ -33,7 +33,7 @@ Poissono solver based on FFT (along x - periodic) + TDMA (y, walls).
 ![Test](doc/val.png)
 
 
-## RBC (Ra=1e8 + Pr=1)
+## Example of RBC (Ra=1e8 + Pr=1)
 
 ![Test](doc/rbc3.png)
 
