@@ -17,11 +17,14 @@ integer :: i, j, k, n, m, t
 integer :: ip,im,jp,jm
 double precision, allocatable :: x(:), y(:), kx(:), kx2(:)
 double complex :: a(ny), b(ny), c(ny), d(ny), sol(ny), meanp(ny)
-integer :: planf, planb, status, ntmax, dump
+integer :: planf, planb, status, ntmax, dump, stage
 double precision :: radius, eps, epsi, gamma, rho, mu, dxi, ddxi, ddyi, normod, dt
 double precision :: umax=0.0d0, vmax=0.d0
 double precision :: chempot, sigma, cflx, cfly, ra, pr, nut, nub, num, noise
 double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, rhoi, alpha, beta
+double precision , parameter :: alpha(3) = (/ 8.d0/15.d0,   5.d0/12.d0,   3.d0/4.d0 /) !rk3 alpha coef
+double precision , parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0 /) ! rk3 beta coef
+
 
 #define phiflag 0
 #define tempflag 1
@@ -89,8 +92,8 @@ allocate(temp(nx,ny),rhstemp(nx,ny),rhstemp_o(nx,ny))
 
 !########################################################
 
-write(*,*) "NEMESI36"
-write(*,*) "Code for 2D phase-field simulation in RB configuration"
+write(*,*) "MRBC36"
+write(*,*) "Code for 2D phase-field simulations in RB configuration"
 write(*,*) "Grid.     :", nx, ny
 write(*,*) "Lx and Ly :", lx, ly
 write(*,*) "Dx and Dy  :", dx, dy
@@ -265,36 +268,39 @@ do t=1,ntmax
   !##########################################################
   #if tempflag == 1
   ! Advection + diffusion (one loop, faster on GPU)
-  !$acc kernels
-  do i=1,nx
-    do j=2,ny-1
-      ip=i+1
-      im=i-1
-      jp=j+1
-      jm=j-1
-      if (ip .gt. nx) ip=1
-      if (im .lt. 1) im=nx
-      ! add advection contribution
-      rhstemp(i,j)=-(u(ip,j)*0.5*(temp(ip,j)+temp(i,j)) - u(i,j)*0.5*(temp(i,j)+temp(im,j)))*dxi -(v(i,jp)*0.5*(temp(i,jp)+temp(i,j)) - v(i,j)*0.5*(temp(i,j)+temp(i,jm)))*dyi
-      ! add diffusion contribution
-      rhstemp(i,j)=rhstemp(i,j) + difftemp*((temp(ip,j)-2.d0*temp(i,j)+temp(im,j))*ddxi + (temp(i,jp) -2.d0*temp(i,j) +temp(i,jm))*ddyi)      
+  do stage=1,3
+    !$acc kernels
+    do i=1,nx
+      do j=2,ny-1
+        ip=i+1
+        im=i-1
+        jp=j+1
+        jm=j-1
+        if (ip .gt. nx) ip=1
+        if (im .lt. 1) im=nx
+        ! add advection contribution
+        rhstemp(i,j)=-(u(ip,j)*0.5*(temp(ip,j)+temp(i,j)) - u(i,j)*0.5*(temp(i,j)+temp(im,j)))*dxi -(v(i,jp)*0.5*(temp(i,jp)+temp(i,j)) - v(i,j)*0.5*(temp(i,j)+temp(i,jm)))*dyi
+        ! add diffusion contribution
+        rhstemp(i,j)=rhstemp(i,j) + difftemp*((temp(ip,j)-2.d0*temp(i,j)+temp(im,j))*ddxi + (temp(i,jp) -2.d0*temp(i,j) +temp(i,jm))*ddyi)      
+      enddo
+    enddo
+
+    ! New temperature field
+    do i=1,nx
+      do j=1,ny
+        temp(i,j) = temp(i,j)  + dt*(alpha(stage)*rhstemp(i,j)-beta(stage)*rhstemp_o(i,j))
+        rhstemp_o(i,j)=rhstemp(i,j)
+      enddo
+    enddo
+
+    ! impose BC on the temperature field
+    ! Top wall hot and bottom wall cold
+    do i=1,nx
+      temp(i,1) =  1.0d0
+      temp(i,ny) = 0.0d0
     enddo
   enddo
 
-  ! New temperature field
-  do i=1,nx
-    do j=1,ny
-      temp(i,j) = temp(i,j)  + dt*(alpha*rhstemp(i,j)-beta*rhstemp_o(i,j))
-      rhstemp_o(i,j)=rhstemp(i,j)
-    enddo
-  enddo
-
-  ! impose BC on the temperature field
-  ! Top wall hot and bottom wall cold
-  do i=1,nx
-    temp(i,1) =  1.0d0
-    temp(i,ny) = 0.0d0
-  enddo
   ! compute bottom and top nusselt numbers
   nut=0.0d0
   nub=0.0d0
