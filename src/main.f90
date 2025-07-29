@@ -329,107 +329,105 @@ do t=1,ntmax
   ! START 3A: Projection step for NS
   !##########################################################
   ! Advection + diffusion
-  !$acc kernels
-  do j=2,ny-1
-    do i=1,nx
-      ip=i+1
-      im=i-1
-      jp=j+1
-      jm=j-1
-      if (ip .gt. nx) ip=1
-      if (im .lt. 1) im=nx
-      ! compute the products (conservative form)
-      h11 = (u(ip,j)+u(i,j))*(u(ip,j)+u(i,j))     - (u(i,j)+u(im,j))*(u(i,j)+u(im,j))
-      h12 = (u(i,jp)+u(i,j))*(v(i,jp)+v(im,jp))   - (u(i,j)+u(i,jm))*(v(i,j)+v(im,j))
-      h21 = (u(ip,j)+u(ip,jm))*(v(ip,j)+v(i,j))   - (u(i,j)+u(i,jm))*(v(i,j)+v(im,j))
-      h22 = (v(i,jp)+v(i,j))*(v(i,jp)+v(i,j))     - (v(i,j)+v(i,jm))*(v(i,j)+v(i,jm))
-      ! compute the derivative
-      h11=h11*0.25d0*dxi
-      h12=h12*0.25d0*dxi
-      h21=h21*0.25d0*dxi
-      h22=h22*0.25d0*dxi
-      ! add advection to the rhs
-      rhsu(i,j)=-(h11+h12)
-      rhsv(i,j)=-(h21+h22)
-      ! compute the diffusive terms
-      h11 = mu*(u(ip,j)-2.d0*u(i,j)+u(im,j))*ddxi
-      h12 = mu*(u(i,jp)-2.d0*u(i,j)+u(i,jm))*ddxi
-      h21 = mu*(v(ip,j)-2.d0*v(i,j)+v(im,j))*ddxi
-      h22 = mu*(v(i,jp)-2.d0*v(i,j)+v(i,jm))*ddxi
-      rhsu(i,j)=rhsu(i,j)+(h11+h12)*rhoi
-      rhsv(i,j)=rhsv(i,j)+(h21+h22)*rhoi
-      ! add buoyancy term
-      #if tempflag == 1
-      rhsv(i,j)=rhsv(i,j) + temp(i,j)+temp(i,jm)
-      #endif
-      ! channel pressure driven (along x)
-      !rhsu(i,j)=rhsu(i,j) + 1.d0
+  do stage=1,3
+    !$acc kernels
+    do j=2,ny-1
+      do i=1,nx
+        ip=i+1
+        im=i-1
+        jp=j+1
+        jm=j-1
+        if (ip .gt. nx) ip=1
+        if (im .lt. 1) im=nx
+        jp=j+1
+        if (jp .gt. ny) jp=1
+        jm=j-1
+        if (jm .lt. 1) jm=ny
+        ! compute the products (conservative form)
+        h11 = (u(ip,j)+u(i,j))*(u(ip,j)+u(i,j))     - (u(i,j)+u(im,j))*(u(i,j)+u(im,j))
+        h12 = (u(i,jp)+u(i,j))*(v(i,jp)+v(im,jp))   - (u(i,j)+u(i,jm))*(v(i,j)+v(im,j))
+        h21 = (u(ip,j)+u(ip,jm))*(v(ip,j)+v(i,j))   - (u(i,j)+u(i,jm))*(v(i,j)+v(im,j))
+        h22 = (v(i,jp)+v(i,j))*(v(i,jp)+v(i,j))     - (v(i,j)+v(i,jm))*(v(i,j)+v(i,jm))
+        ! compute the derivative
+        h11=h11*0.25d0*dxi
+        h12=h12*0.25d0*dxi
+        h21=h21*0.25d0*dxi
+        h22=h22*0.25d0*dxi
+        ! add advection to the rhs
+        rhsu(i,j)=-(h11+h12)
+        rhsv(i,j)=-(h21+h22)
+        ! compute the diffusive terms
+        h11 = mu*(u(ip,j)-2.d0*u(i,j)+u(im,j))*ddxi
+        h12 = mu*(u(i,jp)-2.d0*u(i,j)+u(i,jm))*ddxi
+        h21 = mu*(v(ip,j)-2.d0*v(i,j)+v(im,j))*ddxi
+        h22 = mu*(v(i,jp)-2.d0*v(i,j)+v(i,jm))*ddxi
+        rhsu(i,j)=rhsu(i,j)+(h11+h12)*rhoi
+        rhsv(i,j)=rhsv(i,j)+(h21+h22)*rhoi
+        ! add buoyancy term
+        #if tempflag == 1
+        rhsv(i,j)=rhsv(i,j) + temp(i,j)+temp(i,jm)
+        #endif
+        ! channel pressure driven (along x)
+        !rhsu(i,j)=rhsu(i,j) + 1.d0
+      enddo
     enddo
-  enddo
-  !$acc end kernels
+    !$acc end kernels
 
-  ! Compute surface tension forces 
-  #if phiflag == 1
-  !$acc kernels
-  do j=2,ny-1
-    do i=1,nx
-      ip=i+1
-      im=i-1
-      jp=j+1
-      jm=j-1
-      if (ip .gt. nx) ip=1
-      if (im .lt. 1) im=nx
-      chempot=phi(i,j)*(1.d0-phi(i,j))*(1.d0-2.d0*phi(i,j))*epsi-eps*(phi(ip,j)+phi(im,j)+phi(i,jp)+phi(i,jm)- 4.d0*phi(i,j))*ddxi
-      fxst(i,j)=6.d0*sigma*chempot*0.5d0*(phi(ip,j)-phi(im,j))*dxi
-      fyst(i,j)=6.d0*sigma*chempot*0.5d0*(phi(i,jp)-phi(i,jm))*dxi
+    ! Compute surface tension forces 
+    #if phiflag == 1
+    !$acc kernels
+    do j=2,ny-1
+      do i=1,nx
+        ip=i+1
+        im=i-1
+        jp=j+1
+        jm=j-1
+        if (ip .gt. nx) ip=1
+        if (im .lt. 1) im=nx
+        chempot=phi(i,j)*(1.d0-phi(i,j))*(1.d0-2.d0*phi(i,j))*epsi-eps*(phi(ip,j)+phi(im,j)+phi(i,jp)+phi(i,jm)- 4.d0*phi(i,j))*ddxi
+        fxst(i,j)=6.d0*sigma*chempot*0.5d0*(phi(ip,j)-phi(im,j))*dxi
+        fyst(i,j)=6.d0*sigma*chempot*0.5d0*(phi(i,jp)-phi(i,jm))*dyi
+      enddo
     enddo
-  enddo
-  !$acc end kernels
+    !$acc end kernels
 
-  !$acc kernels
-  ! Add surface tension forces to RHS (do not merge with above!)
-  do j=2,ny
-    do i=1,nx
-      im=i-1
-      jm=j-1
-      if (im .lt. 1) im=nx
-      rhsu(i,j)=rhsu(i,j)+0.5d0*(fxst(im,j)+fxst(i,j))*rhoi
-      rhsv(i,j)=rhsv(i,j)+0.5d0*(fyst(i,jm)+fyst(i,j))*rhoi
+    !$acc kernels
+    ! Add surface tension forces to RHS (do not merge with above!)
+    do j=2,ny
+      do i=1,nx
+        im=i-1
+        jm=j-1
+        if (im .lt. 1) im=nx
+        rhsu(i,j)=rhsu(i,j)+0.5d0*(fxst(im,j)+fxst(i,j))*rhoi
+        rhsv(i,j)=rhsv(i,j)+0.5d0*(fyst(i,jm)+fyst(i,j))*rhoi
+      enddo
     enddo
-  enddo
-  !$acc end kernels
-  #endif
+    !$acc end kernels
+    #endif
 
-  ! find u, v and w star (AB2), overwrite u,v and w
-  !$acc kernels
-  do j=2,ny
-    do i=1,nx
-      u(i,j) = u(i,j) + dt*(alpha*rhsu(i,j)-beta*rhsu_o(i,j))
-      v(i,j) = v(i,j) + dt*(alpha*rhsv(i,j)-beta*rhsv_o(i,j))
-      rhsu_o(i,j)=rhsu(i,j)
-      rhsv_o(i,j)=rhsv(i,j)
+    ! find u, v and w star (AB2), overwrite u,v and w
+    !$acc kernels
+    do j=2,ny-1
+      do i=1,nx
+        u(i,j) = u(i,j) + dt*(alpha(stage)*rhsu(i,j) + beta(stage)*rhsu_o(i,j))
+        v(i,j) = v(i,j) + dt*(alpha(stage)*rhsv(i,j) + beta(stage)*rhsv_o(i,j))
+        rhsu_o(i,j)=rhsu(i,j)
+        rhsv_o(i,j)=rhsv(i,j)
+      enddo
     enddo
-  enddo
-  !$acc end kernels
+    !$acc end kernels
 
-  ! write pressure (debug only)
-  !open(unit=55,file='output/u.dat',form='unformatted',position='append',access='stream',status='new')
-  !write(55) u
-  !close(55)
+    !impose BCs on the flow field
+    !$acc kernels
+    do i=1,nx
+      u(i,1)=0.d0
+      u(i,ny)=0.0d0
+      v(i,1)=0.0d0
+      v(i,ny+1)=0.0d0
+    enddo
+    !$acc end kernels
 
-  ! change after first loop AB2 coefficients
-  alpha=1.5d0
-  beta= 0.5d0
-
-  !impose BCs on the flow field
-  !$acc kernels
-  do i=1,nx
-    u(i,1)=0.d0
-    u(i,ny)=0.0d0
-    v(i,1)=0.0d0
-    v(i,ny+1)=0.0d0
-  enddo
-  !$acc end kernels
+  enddo !end RK3 stage
 
   ! Compute rhs of Poisson equation div*ustar: divergence at cell center 
   !$acc kernels
