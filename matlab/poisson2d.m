@@ -66,12 +66,11 @@ for i = 1:nx/2+1
     c(ny) =  0.0;
 
 
-       % Special handling for kx = 0 (mean mode)
-    if (kx(i) == 0) 
-        for j = 1:ny
-            pc(i,j) = 0.0d0;
-        end
-    else
+    if i == 1
+            b(1) = 1;
+            c(1) = 0;
+            d(1) = 0;
+    end
         % Thomas algorithm (TDMA)
         % Forward sweep
         for j = 2:ny
@@ -92,7 +91,6 @@ for i = 1:nx/2+1
             pc(i,j) = sol(j);
             %sol(j)
         end
-    end
 end
 
 % Reconstruct full spectrum using Hermitian symmetry
