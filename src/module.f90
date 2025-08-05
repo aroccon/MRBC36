@@ -5,7 +5,7 @@ module velocity
 end module velocity
 
 module phase
-    double precision, allocatable :: rhsphi(:,:), phi(:,:), normx(:,:), normy(:,:), fxst(:,:), fyst(:,:)
+    double precision, allocatable :: rhsphi(:,:), phi(:,:), psidi(:,:), normx(:,:), normy(:,:), fxst(:,:), fyst(:,:)
 end module phase
 
 module temperature
