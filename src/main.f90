@@ -10,16 +10,17 @@ use temperature
 use nvtx
 
 implicit none
-integer, parameter :: nx=512, ny=320
+integer, parameter :: nx=256, ny=128
 double precision, parameter :: pi=3.141592653589793d0
 double precision :: dx, dy, lx, ly, acoeff, q, l2norm, err, dyi, factor
 integer :: i, j, k, n, m, t
 integer :: ip,im,jp,jm
 double precision, allocatable :: x(:), y(:), kx(:), kx2(:)
+double precision, parameter :: enum=1.e-16
 double complex :: a(0:ny+1), b(0:ny+1), c(0:ny+1), d(0:ny+1), sol(0:ny+1)
 integer :: planf, planb, status, ntmax, dump, stage
 double precision :: radius, eps, epsi, gamma, rho, mu, dxi, ddxi, ddyi, normod, dt
-double precision :: umax=0.0d0, vmax=0.d0
+double precision :: umax=0.0d0, vmax=0.d0, val
 double precision :: chempot, sigma, cflx, cfly, ra, pr, nut, nub, num, noise
 double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, rhoi
 double precision, parameter ::  alpha(3)     = (/ 8.d0/15.d0,   5.d0/12.d0,   3.d0/4.d0 /) !rk3 alpha coef
@@ -27,7 +28,7 @@ double precision, parameter ::  beta(3)      = (/ 0.d0,       -17.d0/60.d0,  -5.
 double precision, parameter ::  alpha_ssp(3) = (/ 1.d0,         3.d0/4.d0,    1.d0/3.d0 /) !rk3 ssp coef
 double precision, parameter ::  beta_ssp(3)  = (/ 0.d0,         1.d0/4.d0,    2.d0/3.d0 /) !rk3 ssp coef
 
-#define phiflag 0
+#define phiflag 1
 #define tempflag 1
 
 !##########################################################
@@ -35,11 +36,11 @@ double precision, parameter ::  beta_ssp(3)  = (/ 0.d0,         1.d0/4.d0,    2.
 ! Define some basic quantities
 ntmax=400000
 t=0
-dump=10000
+dump=1000
 radius=0.5d0
 epsratio=1.0d0
 gamma=0.0d0
-sigma=0.1d0
+sigma=0.01d0
 radius=0.3d0
 ra=1.e6
 pr=1.d0
@@ -56,7 +57,7 @@ dxi=1.d0/dx
 dyi=1.d0/dy
 ddxi=dxi*dxi
 ddyi=dyi*dyi
-dt=0.00001
+dt=0.0001
 eps=max(dx,dy)
 epsi=1.d0/eps
 rhoi=1.d0/rho
@@ -81,7 +82,8 @@ allocate(rhsu_o(nx,ny),rhsv_o(nx,ny+1))
 allocate(div(nx,ny))
 
 ! phase-field variables (defined on centers)
-allocate(phi(nx,ny),rhsphi(nx,ny))
+! add 0:ny+1, i.e. ghost nodes also for phi?
+allocate(phi(nx,ny),rhsphi(nx,ny),psidi(nx,ny))
 allocate(normx(nx,ny),normy(nx,ny))
 allocate(fxst(nx,ny),fyst(nx,ny))
 
@@ -199,7 +201,7 @@ do t=1,ntmax
   ! START 1: Advance phase-field 
   !##########################################################
   ! Advection + diffusion term
-  gamma=1.0d0*max(umax,vmax)
+  !$acc kernels
   do j=2,ny-1
     do i=1,nx
       ip=i+1
@@ -211,17 +213,30 @@ do t=1,ntmax
       ! Advection 
       rhsphi(i,j)=-(u(ip,j)*0.5*(phi(ip,j)+phi(i,j)) - u(i,j)*0.5*(phi(i,j)+phi(im,j)))*dxi -(v(i,jp)*0.5*(phi(i,jp)+phi(i,j)) - v(i,j)*0.5*(phi(i,j)+phi(i,jm)))*dyi
       ! Add diffusion
-      rhsphi(i,j)=rhsphi(i,j) + gamma*eps*((phi(ip,j)-2.d0*phi(i,j)+phi(im,j))*ddxi + (phi(i,jp) -2.d0*phi(i,j) +phi(i,jm))*ddyi)     
+      rhsphi(i,j)=rhsphi(i,j) + gamma*eps*((phi(ip,j)-2.d0*phi(i,j)+phi(im,j))*ddxi + (phi(i,jp) -2.d0*phi(i,j) +phi(i,jm))*ddyi) 
+      val = min(phi(i,j),1.d0) ! avoid machine precision overshoots in phi that leads to problem with log
+      psidi(i,j) = eps*log((val+enum)/(1.d0-val+enum))
+    enddo
+  enddo
+
+  ! compute normals from psidi
+  do j=2,ny-1
+    do i=1,nx
+      ip=i+1
+      im=i-1
+      jp=j+1
+      jm=j-1
+      if (ip .gt. nx) ip=1
+      if (im .lt. 1) im=nx
       ! Compute normals
-      normx(i,j) = (phi(ip,j)-phi(im,j))
-      normy(i,j) = (phi(i,jp)-phi(i,jm))
-      normod = 1.0d0/(sqrt(normx(i,j)**2d0 + normy(i,j)**2d0) + 1.e-16)
+      normx(i,j) = (psidi(ip,j)-psidi(im,j))
+      normy(i,j) = (psidi(i,jp)-psidi(i,jm))
+      normod = 1.0d0/(sqrt(normx(i,j)**2d0 + normy(i,j)**2d0) + enum)
       normx(i,j) = normx(i,j)*normod
       normy(i,j) = normy(i,j)*normod 
     enddo
   enddo
-  ! compute sharpening (then move to ACDI)
-  !$acc kernels
+  ! gamma computed from previous field (after NS)
   do i=1,nx
     do j=2,ny-1
       ip=i+1
@@ -230,14 +245,12 @@ do t=1,ntmax
       jm=j-1
       if (ip .gt. nx) ip=1
       if (im .lt. 1) im=nx
-      rhsphi(i,j)=rhsphi(i,j)+gamma*(((phi(ip,j)**2.d0-phi(ip,j))*normx(ip,j) - (phi(im,j)**2.d0-phi(im,j))*normx(im,j))*0.5*dxi + &
-                                     ((phi(i,jp)**2.d0-phi(i,jp))*normy(i,jp) - (phi(i,jm)**2.d0-phi(i,jm))*normy(i,jm))*0.5*dyi)
+      rhsphi(i,j)=rhsphi(i,j)-gamma*((0.25d0*(1.d0-(tanh(0.5d0*psidi(ip,j)*epsi))**2)*normx(ip,j) - 0.25d0*(1.d0-(tanh(0.5d0*psidi(im,j)*epsi))**2)*normx(im,j))*0.5d0*dxi + &
+                                     (0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jp)*epsi))**2)*normy(i,jp) - 0.25d0*(1.d0-(tanh(0.5d0*psidi(i,jm)*epsi))**2)*normy(i,jm))*0.5d0*dyi) 
     enddo
   enddo
-  !$acc end kernels
 
   ! phase-field n+1 (Euler explicit)
-  !$acc kernels
   do i=1,nx
     do j=2,ny-1
       phi(i,j) = phi(i,j)  + dt*rhsphi(i,j);
@@ -545,8 +558,9 @@ do t=1,ntmax
 
   cflx=umax*dt/dx
   cfly=vmax*dt/dy
-  !write(*,*) "umax:", umax
-  !write(*,*) "vmax:", vmax
+ ! write(*,*) "umax:", umax
+ ! write(*,*) "vmax:", vmax
+  gamma=1.0d0*max(umax,vmax)
   write(*,*) "CFL number:", max(cflx,cfly)
 
 
