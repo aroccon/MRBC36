@@ -10,21 +10,22 @@ use temperature
 use nvtx
 
 implicit none
-integer, parameter :: nx=256, ny=128
+integer, parameter :: nx=512, ny=320
 double precision, parameter :: pi=3.141592653589793d0
 double precision :: dx, dy, lx, ly, acoeff, q, l2norm, err, dyi, factor
 integer :: i, j, k, n, m, t
 integer :: ip,im,jp,jm
 double precision, allocatable :: x(:), y(:), kx(:), kx2(:)
-double complex :: a(ny), b(ny), c(ny), d(ny), sol(ny), meanp(ny)
+double complex :: a(0:ny+1), b(0:ny+1), c(0:ny+1), d(0:ny+1), sol(0:ny+1)
 integer :: planf, planb, status, ntmax, dump, stage
 double precision :: radius, eps, epsi, gamma, rho, mu, dxi, ddxi, ddyi, normod, dt
 double precision :: umax=0.0d0, vmax=0.d0
 double precision :: chempot, sigma, cflx, cfly, ra, pr, nut, nub, num, noise
-double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, rhoi, alpha, beta
-double precision , parameter :: alpha(3) = (/ 8.d0/15.d0,   5.d0/12.d0,   3.d0/4.d0 /) !rk3 alpha coef
-double precision , parameter :: beta(3)  = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0 /) ! rk3 beta coef
-
+double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, rhoi
+double precision, parameter ::  alpha(3)     = (/ 8.d0/15.d0,   5.d0/12.d0,   3.d0/4.d0 /) !rk3 alpha coef
+double precision, parameter ::  beta(3)      = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0/) ! rk3 beta coef
+double precision, parameter ::  alpha_ssp(3) = (/ 1.d0,         3.d0/4.d0,    1.d0/3.d0 /) !rk3 ssp coef
+double precision, parameter ::  beta_ssp(3)  = (/ 0.d0,         1.d0/4.d0,    2.d0/3.d0 /) !rk3 ssp coef
 
 #define phiflag 0
 #define tempflag 1
@@ -40,7 +41,7 @@ epsratio=1.0d0
 gamma=0.0d0
 sigma=0.1d0
 radius=0.3d0
-ra=2.e7
+ra=1.e6
 pr=1.d0
 difftemp=sqrt(1.d0/ra)! sqrt(Ra) with Ra=2e6 
 rho=1.d0
@@ -50,17 +51,15 @@ lx = 2.d0
 ly = 1.d0
 ! Grid spacing: dx divided by nx to have perfect periodicity, same for ny
 dx = lx/nx 
-dy = ly/ny
+dy = ly/(ny-1)
 dxi=1.d0/dx
 dyi=1.d0/dy
 ddxi=dxi*dxi
 ddyi=dyi*dyi
-dt=0.0002
+dt=0.00001
 eps=max(dx,dy)
 epsi=1.d0/eps
 rhoi=1.d0/rho
-alpha=1.d0
-beta=0.0d0
 
 
 
@@ -221,7 +220,6 @@ do t=1,ntmax
       normy(i,j) = normy(i,j)*normod 
     enddo
   enddo
-  write(*,*) "209"
   ! compute sharpening (then move to ACDI)
   !$acc kernels
   do i=1,nx
@@ -284,35 +282,31 @@ do t=1,ntmax
         rhstemp(i,j)=rhstemp(i,j) + difftemp*((temp(ip,j)-2.d0*temp(i,j)+temp(im,j))*ddxi + (temp(i,jp) -2.d0*temp(i,j) +temp(i,jm))*ddyi)      
       enddo
     enddo
-
-    ! New temperature field
+    ! New provisional temperature field
     do i=1,nx
       do j=1,ny
-        temp(i,j) = temp(i,j)  + dt*(alpha(stage)*rhstemp(i,j)-beta(stage)*rhstemp_o(i,j))
+        temp(i,j) = temp(i,j)  + dt*(alpha_ssp(stage)*rhstemp(i,j)+ alpha_ssp(stage)*rhstemp_o(i,j))
         rhstemp_o(i,j)=rhstemp(i,j)
       enddo
     enddo
-
-    ! impose BC on the temperature field
-    ! Top wall hot and bottom wall cold
+    ! impose BC on the temperature field: Top wall hot and bottom wall cold
     do i=1,nx
       temp(i,1) =  1.0d0
       temp(i,ny) = 0.0d0
     enddo
+    !$acc end kernels
   enddo
-
   ! compute bottom and top nusselt numbers
   nut=0.0d0
   nub=0.0d0
   do i=1,nx
-    nut=nut + (temp(i,1)-temp(i,2))/dy
-    nub=nub + (temp(i,ny-1)-temp(i,ny))/dy
+    nut=nut + (temp(i,1)-temp(i,2))*dyi
+    nub=nub + (temp(i,ny-1)-temp(i,ny))*dyi
   enddo
   nut=nut/nx
   nub=nub/nx
 
   write(*,*) "Mean nusselt", (nut+nub)/2
-  !$acc end kernels
   #endif
   !##########################################################
   ! END 2: Temperature an n+1 obtained
@@ -339,10 +333,6 @@ do t=1,ntmax
         jm=j-1
         if (ip .gt. nx) ip=1
         if (im .lt. 1) im=nx
-        jp=j+1
-        if (jp .gt. ny) jp=1
-        jm=j-1
-        if (jm .lt. 1) jm=ny
         ! compute the products (conservative form)
         h11 = (u(ip,j)+u(i,j))*(u(ip,j)+u(i,j))     - (u(i,j)+u(im,j))*(u(i,j)+u(im,j))
         h12 = (u(i,jp)+u(i,j))*(v(i,jp)+v(im,jp))   - (u(i,j)+u(i,jm))*(v(i,j)+v(im,j))
@@ -350,17 +340,17 @@ do t=1,ntmax
         h22 = (v(i,jp)+v(i,j))*(v(i,jp)+v(i,j))     - (v(i,j)+v(i,jm))*(v(i,j)+v(i,jm))
         ! compute the derivative
         h11=h11*0.25d0*dxi
-        h12=h12*0.25d0*dxi
+        h12=h12*0.25d0*dyi
         h21=h21*0.25d0*dxi
-        h22=h22*0.25d0*dxi
+        h22=h22*0.25d0*dyi
         ! add advection to the rhs
         rhsu(i,j)=-(h11+h12)
         rhsv(i,j)=-(h21+h22)
         ! compute the diffusive terms
         h11 = mu*(u(ip,j)-2.d0*u(i,j)+u(im,j))*ddxi
-        h12 = mu*(u(i,jp)-2.d0*u(i,j)+u(i,jm))*ddxi
+        h12 = mu*(u(i,jp)-2.d0*u(i,j)+u(i,jm))*ddyi
         h21 = mu*(v(ip,j)-2.d0*v(i,j)+v(im,j))*ddxi
-        h22 = mu*(v(i,jp)-2.d0*v(i,j)+v(i,jm))*ddxi
+        h22 = mu*(v(i,jp)-2.d0*v(i,j)+v(i,jm))*ddyi
         rhsu(i,j)=rhsu(i,j)+(h11+h12)*rhoi
         rhsv(i,j)=rhsv(i,j)+(h21+h22)*rhoi
         ! add buoyancy term
@@ -472,15 +462,15 @@ do t=1,ntmax
       d(j) =  rhspc(i,j)
     end do
 
-    ! Neumann BC at j=1 (bottom)
-    b(1) = -2.0d0*dyi*dyi - kx2(i)
-    c(1) =  2.0d0*dyi*dyi
-    a(1) =  0.0d0
+    ! Neumann BC at j=0 (ghost and first interior)
+    b(0) = -1.0d0*dyi*dyi - kx2(i)
+    c(0) =  1.0d0*dyi*dyi
+    a(0) =  0.0d0
 
     ! Neumann BC at j=ny (top)
-    a(ny) =  2.0d0*dyi*dyi
-    b(ny) = -2.0d0*dyi*dyi - kx2(i)
-    c(ny) =  0.0d0
+    a(ny+1) =  1.0d0*dyi*dyi
+    b(ny+1) = -1.0d0*dyi*dyi - kx2(i)
+    c(ny+1) =  0.0d0
 
     ! Special handling for kx=0 (mean mode)
     ! fix pressure on one point (otherwise is zero mean along x)
@@ -491,19 +481,19 @@ do t=1,ntmax
     endif
     ! Thomas algorithm (TDMA) for tridiagonal system 
     ! Forward sweep
-    do j = 2, ny
+    do j = 1, ny+1
       factor = a(j)/b(j-1)
       b(j) = b(j) - factor * c(j-1)
       d(j) = d(j) - factor * d(j-1)
     end do
 
     ! Back substitution
-    sol(ny) = d(ny) / b(ny)
-    do j = ny-1, 1, -1
+    sol(ny+1) = d(ny+1) / b(ny+1)
+    do j = ny, 0, -1
       sol(j) = (d(j) - c(j) * sol(j+1)) / b(j)
     end do
 
-    ! Store solution
+    ! Store solution (copy only interior nodes)
     do j = 1, ny
       pc(i,j) = sol(j)
     end do
@@ -607,10 +597,10 @@ do t=1,ntmax
 
 enddo
 
-  !write pressure (debug only)
-  open(unit=55,file='output/div.dat',form='unformatted',position='append',access='stream',status='new')
-  write(55) div
-  close(55)
+!write pressure (debug only)
+open(unit=55,file='output/div.dat',form='unformatted',position='append',access='stream',status='new')
+write(55) div
+close(55)
 
 deallocate(x,y)
 !deallocate(a,b,c,d,sol)

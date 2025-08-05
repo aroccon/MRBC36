@@ -1,8 +1,12 @@
 ## Multiphase Rayleigh-Benard 
 2D code for Phase-field simulation in Rayleigh-Bénard configurtion 
-Finite difference-based 
-Temperature and phase-field fully explicit 
-Poissono solver based on FFT (along x - periodic) + TDMA (y, walls).
+Finite difference-based (FD2)
+Time integration
+Temperature: SSP-RK3
+Navier-Stokes: RK3
+Phase-field: RK3 (to be implemented)
+NS: Fractional method, Poisson solver based on FFT (along x - periodic) + TDMA (y, walls).
+
 
 
 ## Check list of features implemented (or to be implemented)
@@ -27,15 +31,15 @@ Poissono solver based on FFT (along x - periodic) + TDMA (y, walls).
 
 ## Validation  
 - Aspect ratio: 2
-- Ra from 1e3 to 1e8 + Pr=1
+- Ra from 1e3 to 1e9 + Pr=1
 - Grid: 512 x 256
 
 ![Test](doc/val.png)
 
 
-## Example of RBC (Ra=1e8 + Pr=1)
+## Example of RBC (Ra=1e9 + Pr=1)
 
-![Test](doc/rbc3.png)
+![Test](doc/rbc4.png)
 
 ## Performance and resolution tested
 
