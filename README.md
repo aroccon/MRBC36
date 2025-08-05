@@ -1,11 +1,12 @@
 ## Multiphase Rayleigh-Benard 
 2D code for Phase-field simulation in Rayleigh-Bénard configurtion 
 Finite difference-based (FD2)
-Time integration
-Temperature: SSP-RK3
-Navier-Stokes: RK3
-Phase-field: RK3 (to be implemented)
-NS: Fractional method, Poisson solver based on FFT (along x - periodic) + TDMA (y, walls).
+
+#Time integration
+- Temperature: SSP-RK3
+- Navier-Stokes: RK3
+- Phase-field: RK3 (to be implemented)
+- NS: Fractional method, Poisson solver based on FFT (along x - periodic) + TDMA (y, walls).
 
 
 
