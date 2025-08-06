@@ -1,3 +1,13 @@
+module param
+  integer, parameter :: nx=256, ny=128
+  double precision, parameter :: pi=3.141592653589793d0
+  double precision :: dx, dy, lx, ly, acoeff, q, l2norm, err, dyi, factor
+  double precision :: radius, eps, epsi, gamma, rho, mu, dxi, ddxi, ddyi, normod, dt
+  double precision :: umax=0.0d0, vmax=0.d0, val, lambda
+  double precision :: chempot, sigma, cflx, cfly, ra, pr, nut, nub, num, noise
+  double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, rhoi
+end module param
+
 module velocity
     double precision, allocatable :: u(:,:),  v(:,:), rhsu(:,:), rhsv(:,:), rhsu_o(:,:), rhsv_o(:,:)
     double precision, allocatable :: rhsp(:,:),  p(:,:), div(:,:)
@@ -9,7 +19,7 @@ module phase
 end module phase
 
 module temperature
-    double precision, allocatable :: temp(:,:), rhstemp(:,:), rhstemp_o(:,:)
+    double precision, allocatable :: temp(:,:), tempn(:,:), rhstemp(:,:), rhstemp_o(:,:)
 end module temperature
 
 

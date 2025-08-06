@@ -2,6 +2,7 @@
 program main
 
 use cufft
+use param
 use iso_c_binding
 use openacc 
 use velocity
@@ -10,25 +11,18 @@ use temperature
 use nvtx
 
 implicit none
-integer, parameter :: nx=256, ny=128
-double precision, parameter :: pi=3.141592653589793d0
-double precision :: dx, dy, lx, ly, acoeff, q, l2norm, err, dyi, factor
 integer :: i, j, k, n, m, t
 integer :: ip,im,jp,jm
 double precision, allocatable :: x(:), y(:), kx(:), kx2(:)
 double precision, parameter :: enum=1.e-16
 double complex :: a(0:ny+1), b(0:ny+1), c(0:ny+1), d(0:ny+1), sol(0:ny+1)
 integer :: planf, planb, status, ntmax, dump, stage
-double precision :: radius, eps, epsi, gamma, rho, mu, dxi, ddxi, ddyi, normod, dt
-double precision :: umax=0.0d0, vmax=0.d0, val
-double precision :: chempot, sigma, cflx, cfly, ra, pr, nut, nub, num, noise
-double precision :: pos, epsratio, times, timef, difftemp, h11, h12, h21, h22, rhoi
 double precision, parameter ::  alpha(3)     = (/ 8.d0/15.d0,   5.d0/12.d0,   3.d0/4.d0 /) !rk3 alpha coef
 double precision, parameter ::  beta(3)      = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0/) ! rk3 beta coef
-double precision, parameter ::  alpha_ssp(3) = (/ 1.d0,         3.d0/4.d0,    1.d0/3.d0 /) !rk3 ssp coef
-double precision, parameter ::  beta_ssp(3)  = (/ 0.d0,         1.d0/4.d0,    2.d0/3.d0 /) !rk3 ssp coef
+!double precision, parameter ::  alpha(3) = (/ 1.d0,         3.d0/4.d0,    1.d0/3.d0 /) !rk3 ssp coef
+!double precision, parameter ::  beta(3)  = (/ 0.d0,         1.d0/4.d0,    2.d0/3.d0 /) !rk3 ssp coef
 
-#define phiflag 1
+#define phiflag 0
 #define tempflag 1
 
 !##########################################################
@@ -88,7 +82,7 @@ allocate(normx(nx,ny),normy(nx,ny))
 allocate(fxst(nx,ny),fyst(nx,ny))
 
 ! temperature variables (defined on centers)
-allocate(temp(nx,ny),rhstemp(nx,ny),rhstemp_o(nx,ny))
+allocate(temp(nx,ny),rhstemp(nx,ny),rhstemp_o(nx,ny),tempn(nx,ny))
 
 
 !########################################################
@@ -279,6 +273,7 @@ do t=1,ntmax
   !##########################################################
   #if tempflag == 1
   ! Advection + diffusion (one loop, faster on GPU)
+  tempn=temp !tempn is the temperature at time step n (the initial one)
   do stage=1,3
     !$acc kernels
     do i=1,nx
@@ -291,24 +286,60 @@ do t=1,ntmax
         if (im .lt. 1) im=nx
         ! add advection contribution
         rhstemp(i,j)=-(u(ip,j)*0.5*(temp(ip,j)+temp(i,j)) - u(i,j)*0.5*(temp(i,j)+temp(im,j)))*dxi -(v(i,jp)*0.5*(temp(i,jp)+temp(i,j)) - v(i,j)*0.5*(temp(i,j)+temp(i,jm)))*dyi
-        ! add diffusion contribution
-        rhstemp(i,j)=rhstemp(i,j) + difftemp*((temp(ip,j)-2.d0*temp(i,j)+temp(im,j))*ddxi + (temp(i,jp) -2.d0*temp(i,j) +temp(i,jm))*ddyi)      
+        ! add diffusion contribution (only x, y is done after implicit)
+        rhstemp(i,j)=rhstemp(i,j) + difftemp*(temp(ip,j)-2.d0*temp(i,j)+temp(im,j))*ddxi !+ (temp(i,jp) -2.d0*temp(i,j) +temp(i,jm))*ddyi)   
       enddo
     enddo
     ! New provisional temperature field
     do i=1,nx
       do j=1,ny
-        temp(i,j) = temp(i,j)  + dt*(alpha_ssp(stage)*rhstemp(i,j)+ alpha_ssp(stage)*rhstemp_o(i,j))
+        temp(i,j) = temp(i,j)  + dt*(alpha(stage)*rhstemp(i,j)+ alpha(stage)*rhstemp_o(i,j))
         rhstemp_o(i,j)=rhstemp(i,j)
       enddo
     enddo
-    ! impose BC on the temperature field: Top wall hot and bottom wall cold
+    ! BC during RK stages
     do i=1,nx
       temp(i,1) =  1.0d0
       temp(i,ny) = 0.0d0
     enddo
     !$acc end kernels
   enddo
+  ! end of explicit part, now add the 
+  lambda = 0.5d0*difftemp*dt*ddyi ! then move in readinput
+  do i=1,nx
+    ! Build TDMA arrays for interior points only
+    do j=2,ny-1
+      a(j) = -lambda
+      b(j) =  1.0d0 + 2.0d0*lambda
+      c(j) = -lambda
+      d(j) =  temp(i,j) + lambda*(tempn(i,j+1)-2.0d0*tempn(i,j) + tempn(i,j-1))
+    enddo
+    ! Boundary conditions
+    a(1)=0.0d0
+    b(1)=1.0d0
+    c(1)=0.0d0
+    d(1)=1.0d0  ! bottom hot
+    a(ny)=0.0d0
+    b(ny)=1.0d0
+    c(ny)=0.0d0
+    d(ny)=0.0d0 ! top cold
+
+    ! TDMA SOLVER
+    ! Forward sweep
+    do j = 2, ny
+      factor = a(j)/b(j-1)
+      b(j) = b(j) - factor * c(j-1)
+      d(j) = d(j) - factor * d(j-1)
+    enddo
+
+    ! Back substitution
+    temp(i,ny) = d(ny+1)/b(ny+1)
+    do j = ny-1, 1, -1
+      temp(i,j) = (d(j) - c(j)*temp(i,j+1))/b(j)
+    end do
+  enddo
+
+
   ! compute bottom and top nusselt numbers
   nut=0.0d0
   nub=0.0d0
