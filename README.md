@@ -3,7 +3,7 @@
 Finite difference-based (FD2)
 
 #Time integration
-- Temperature: SSP-RK3
+- Temperature: SSP-RK3 + CN for Temperature along y
 - Navier-Stokes: RK3
 - Phase-field: RK3 (to be implemented)
 - NS: Fractional method, Poisson solver based on FFT (along x - periodic) + TDMA (y, walls).
