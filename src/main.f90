@@ -24,13 +24,14 @@ double precision, parameter ::  beta(3)      = (/ 0.d0,       -17.d0/60.d0,  -5.
 
 #define phiflag 0
 #define tempflag 1
+#define impdifftemp 1
 
 !##########################################################
 ! declare parameters
 ! Define some basic quantities
-ntmax=400000
+ntmax=500
 t=0
-dump=1000
+dump=99
 radius=0.5d0
 epsratio=1.0d0
 gamma=0.0d0
@@ -38,7 +39,7 @@ sigma=0.01d0
 radius=0.3d0
 ra=1.e6
 pr=1.d0
-difftemp=sqrt(1.d0/ra)! sqrt(Ra) with Ra=2e6 
+difftemp=0.1!sqrt(1.d0/ra)! sqrt(Ra) with Ra=2e6 
 rho=1.d0
 mu=sqrt(1.d0/ra) ! sqrt(1/Ra) with Ra=2e6 
 ! Define domain size
@@ -51,7 +52,7 @@ dxi=1.d0/dx
 dyi=1.d0/dy
 ddxi=dxi*dxi
 ddyi=dyi*dyi
-dt=0.0001
+dt=0.002
 eps=max(dx,dy)
 epsi=1.d0/eps
 rhoi=1.d0/rho
@@ -82,7 +83,7 @@ allocate(normx(nx,ny),normy(nx,ny))
 allocate(fxst(nx,ny),fyst(nx,ny))
 
 ! temperature variables (defined on centers)
-allocate(temp(nx,ny),rhstemp(nx,ny),rhstemp_o(nx,ny),tempn(nx,ny))
+allocate(temp(nx,ny),rhstemp(nx,ny),rhstemp_o(nx,ny))
 
 
 !########################################################
@@ -158,7 +159,7 @@ enddo
 do j=2,ny-1
   do i=1,nx
     call random_number(noise)
-    temp(i,j) = 1.0d0 - y(j) + 0.001d0*(2.0d0*noise - 1.0d0)
+    temp(i,j) = 0.d0!1.0d0 - y(j) + 0.001d0*(2.0d0*noise - 1.0d0)
   enddo
 enddo
 do i=1,nx
@@ -286,8 +287,14 @@ do t=1,ntmax
         if (im .lt. 1) im=nx
         ! add advection contribution
         rhstemp(i,j)=-(u(ip,j)*0.5*(temp(ip,j)+temp(i,j)) - u(i,j)*0.5*(temp(i,j)+temp(im,j)))*dxi -(v(i,jp)*0.5*(temp(i,jp)+temp(i,j)) - v(i,j)*0.5*(temp(i,j)+temp(i,jm)))*dyi
-        ! add diffusion contribution (only x, y is done after implicit)
-        rhstemp(i,j)=rhstemp(i,j) + difftemp*(temp(ip,j)-2.d0*temp(i,j)+temp(im,j))*ddxi !+ (temp(i,jp) -2.d0*temp(i,j) +temp(i,jm))*ddyi)   
+        ! all diffusive contributions explicit
+        #if impdifftemp == 0 
+        rhstemp(i,j)=rhstemp(i,j) + difftemp*((temp(ip,j)-2.d0*temp(i,j)+temp(im,j))*ddxi + (temp(i,jp) -2.d0*temp(i,j) +temp(i,jm))*ddyi)   
+        #endif
+        ! x diffusive contribution explicit and y diffusive implicit (CN)
+        #if impdifftemp == 1
+        rhstemp(i,j)=rhstemp(i,j) + difftemp*(temp(ip,j)-2.d0*temp(i,j)+temp(im,j))*ddxi 
+        #endif
       enddo
     enddo
     ! New provisional temperature field
@@ -304,7 +311,9 @@ do t=1,ntmax
     enddo
     !$acc end kernels
   enddo
-  ! end of explicit part, now add the 
+
+  #if impdifftemp == 1
+  ! add the y diffusive of temperature implicit
   lambda = 0.5d0*difftemp*dt*ddyi ! then move in readinput
   do i=1,nx
     ! Build TDMA arrays for interior points only
@@ -312,7 +321,7 @@ do t=1,ntmax
       a(j) = -lambda
       b(j) =  1.0d0 + 2.0d0*lambda
       c(j) = -lambda
-      d(j) =  temp(i,j) + lambda*(tempn(i,j+1)-2.0d0*tempn(i,j) + tempn(i,j-1))
+      d(j) =  temp(i,j) + lambda*(temp(i,j+1)-2.0d0*temp(i,j) + temp(i,j-1))
     enddo
     ! Boundary conditions
     a(1)=0.0d0
@@ -328,21 +337,27 @@ do t=1,ntmax
     ! Forward sweep
     do j = 2, ny
       factor = a(j)/b(j-1)
-      b(j) = b(j) - factor * c(j-1)
-      d(j) = d(j) - factor * d(j-1)
+      b(j) = b(j) - factor*c(j-1)
+      d(j) = d(j) - factor*d(j-1)
     enddo
 
     ! Back substitution
-    temp(i,ny) = d(ny+1)/b(ny+1)
-    do j = ny-1, 1, -1
-      temp(i,j) = (d(j) - c(j)*temp(i,j+1))/b(j)
+    sol(ny) = d(ny)/b(ny)
+    do j=ny-1, 1, -1
+      sol(j) = (d(j) - c(j)*sol(j+1))/b(j)
     end do
+
+    do j=1, ny
+      temp(i,j)=sol(j)
+    enddo
   enddo
+  #endif
 
 
   ! compute bottom and top nusselt numbers
   nut=0.0d0
   nub=0.0d0
+  !$acc parallel loop reduction(+:nut,nub)
   do i=1,nx
     nut=nut + (temp(i,1)-temp(i,2))*dyi
     nub=nub + (temp(i,ny-1)-temp(i,ny))*dyi
@@ -350,7 +365,8 @@ do t=1,ntmax
   nut=nut/nx
   nub=nub/nx
 
-  write(*,*) "Mean nusselt", (nut+nub)/2
+
+  !write(*,*) "Mean nusselt", (nut+nub)/2
   #endif
   !##########################################################
   ! END 2: Temperature an n+1 obtained
@@ -399,7 +415,7 @@ do t=1,ntmax
         rhsv(i,j)=rhsv(i,j)+(h21+h22)*rhoi
         ! add buoyancy term
         #if tempflag == 1
-        rhsv(i,j)=rhsv(i,j) + temp(i,j)+temp(i,jm)
+        !rhsv(i,j)=rhsv(i,j) + temp(i,j)+temp(i,jm)
         #endif
         ! channel pressure driven (along x)
         !rhsu(i,j)=rhsu(i,j) + 1.d0
@@ -592,7 +608,8 @@ do t=1,ntmax
  ! write(*,*) "umax:", umax
  ! write(*,*) "vmax:", vmax
   gamma=1.0d0*max(umax,vmax)
-  write(*,*) "CFL number:", max(cflx,cfly)
+ ! write(*,*) "CFL number:", max(cflx,cfly), "Mean nusselt", nut, nub
+  write(*,*) "Mean nusselt", nut, nub
 
 
   ! re-impose BCs on the flow field
