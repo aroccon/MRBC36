@@ -8,7 +8,7 @@ LIBS    = -L/usr/local/cuda/lib64 -cudalib=cufft   -lcufft -lnvToolsExt
 
 # Source files
 SRCS = module.f90 main.f90 readwrite.f90
-EXEC = nemesi36
+EXEC = nemesi
 
 # Object files
 OBJS = $(SRCS:.f90=.o)

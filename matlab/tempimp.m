@@ -1,12 +1,12 @@
-lx=1.0;
-ly=2.0;
-nx = 64; 
-ny = 64;
+lx=2.0;
+ly=1.0;
+nx = 512; 
+ny = 256;
 dx = lx/nx; 
 dy = ly/(ny-1);
 dt = 0.01;
 kappa = 0.1;
-ntmax= 2000;
+ntmax= 100;
 
 r_y = kappa*dt/dy^2;
 r_x = kappa*dt/dx^2;
