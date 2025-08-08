@@ -40,7 +40,7 @@ Numerical scheme: Finite difference-based (FD2)
 
 ## Example of single-phase RBC (Ra=1e9 + Pr=1)
 
-![Test](doc/rbc4.png)
+![Test](doc/rbc6.png)
 
 ## Example of multiphase RBC (Ra=1e7 + Pr=1)
 
