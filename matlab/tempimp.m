@@ -1,3 +1,4 @@
+%clear all
 lx=2.0;
 ly=1.0;
 nx = 512; 
@@ -6,7 +7,7 @@ dx = lx/nx;
 dy = ly/(ny-1);
 dt = 0.01;
 kappa = 0.1;
-ntmax= 100;
+ntmax= 99;
 
 r_y = kappa*dt/dy^2;
 r_x = kappa*dt/dx^2;

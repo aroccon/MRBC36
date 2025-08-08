@@ -14,9 +14,8 @@ implicit none
 integer :: i, j, k, n, m, t
 integer :: ip,im,jp,jm
 double precision, allocatable :: x(:), y(:), kx(:), kx2(:)
-double precision, parameter :: enum=1.e-16
 double complex :: a(0:ny+1), b(0:ny+1), c(0:ny+1), d(0:ny+1), sol(0:ny+1)
-integer :: planf, planb, status, ntmax, dump, stage
+integer :: planf, planb, status, stage
 double precision, parameter ::  alpha(3)     = (/ 8.d0/15.d0,   5.d0/12.d0,   3.d0/4.d0 /) !rk3 alpha coef
 double precision, parameter ::  beta(3)      = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0/) ! rk3 beta coef
 !double precision, parameter ::  alpha(3) = (/ 1.d0,         3.d0/4.d0,    1.d0/3.d0 /) !rk3 ssp coef
@@ -26,38 +25,7 @@ double precision, parameter ::  beta(3)      = (/ 0.d0,       -17.d0/60.d0,  -5.
 #define tempflag 1
 #define impdifftemp 1
 
-!##########################################################
-! declare parameters
-! Define some basic quantities
-ntmax=500
-t=0
-dump=99
-radius=0.5d0
-epsratio=1.0d0
-gamma=0.0d0
-sigma=0.01d0
-radius=0.3d0
-ra=1.e6
-pr=1.d0
-difftemp=0.1!sqrt(1.d0/ra)! sqrt(Ra) with Ra=2e6 
-rho=1.d0
-mu=sqrt(1.d0/ra) ! sqrt(1/Ra) with Ra=2e6 
-! Define domain size
-lx = 2.d0
-ly = 1.d0
-! Grid spacing: dx divided by nx to have perfect periodicity, same for ny
-dx = lx/nx 
-dy = ly/(ny-1)
-dxi=1.d0/dx
-dyi=1.d0/dy
-ddxi=dxi*dxi
-ddyi=dyi*dyi
-dt=0.002
-eps=max(dx,dy)
-epsi=1.d0/eps
-rhoi=1.d0/rho
-
-
+call readinput
 
 !assign the code to one GPU
 call acc_set_device_num(0,acc_device_nvidia)
@@ -84,27 +52,12 @@ allocate(fxst(nx,ny),fyst(nx,ny))
 
 ! temperature variables (defined on centers)
 allocate(temp(nx,ny),rhstemp(nx,ny),rhstemp_o(nx,ny))
-
-
 !########################################################
 
-write(*,*) "MRBC36"
-write(*,*) "Code for 2D phase-field simulations in RB configuration"
-write(*,*) "Grid.     :", nx, ny
-write(*,*) "Lx and Ly :", lx, ly
-write(*,*) "Dx and Dy  :", dx, dy
-write(*,*) "Time step  :", dt
-write(*,*) "eps        :", eps
-write(*,*) "Density   :", rho
-write(*,*) "Surf. ten :", sigma
 
-! Parameters for test solution (debug only)
-!n= 1
-!m= 2
-!acoeff= -1.d0/((n*n + (2*pi*m/ly)**2))
 ! Compute axis (position of cell centers)
 x(1)=dx/2
-y(1)=dy/2
+y(1)=0.d0
 do i=1,nx-1
   x(i+1)=x(i) + dx
 enddo
@@ -159,7 +112,7 @@ enddo
 do j=2,ny-1
   do i=1,nx
     call random_number(noise)
-    temp(i,j) = 0.d0!1.0d0 - y(j) + 0.001d0*(2.0d0*noise - 1.0d0)
+    temp(i,j) = 1.0d0 - y(j) + 0.001d0*(2.0d0*noise - 1.0d0)
   enddo
 enddo
 do i=1,nx
@@ -188,9 +141,9 @@ call writefield(t,5)
 !##########################################################
 
 write(*,*) "Start temporal loop"
-do t=1,ntmax
+do t=1,tfin
   call cpu_time(times)
-  write(*,*) "Time step",t,"of",ntmax
+  write(*,*) "Time step",t,"of",tfin
   #if phiflag == 1
   !##########################################################
   ! START 1: Advance phase-field 
@@ -315,6 +268,7 @@ do t=1,ntmax
   #if impdifftemp == 1
   ! add the y diffusive of temperature implicit
   lambda = 0.5d0*difftemp*dt*ddyi ! then move in readinput
+  !$acc parallel loop gang private(a, b, c, d, sol, factor)
   do i=1,nx
     ! Build TDMA arrays for interior points only
     do j=2,ny-1
@@ -335,6 +289,7 @@ do t=1,ntmax
 
     ! TDMA SOLVER
     ! Forward sweep
+    !$acc loop seq
     do j = 2, ny
       factor = a(j)/b(j-1)
       b(j) = b(j) - factor*c(j-1)
@@ -343,6 +298,7 @@ do t=1,ntmax
 
     ! Back substitution
     sol(ny) = d(ny)/b(ny)
+    !$acc loop seq
     do j=ny-1, 1, -1
       sol(j) = (d(j) - c(j)*sol(j+1))/b(j)
     end do
@@ -415,7 +371,7 @@ do t=1,ntmax
         rhsv(i,j)=rhsv(i,j)+(h21+h22)*rhoi
         ! add buoyancy term
         #if tempflag == 1
-        !rhsv(i,j)=rhsv(i,j) + temp(i,j)+temp(i,jm)
+        rhsv(i,j)=rhsv(i,j) + temp(i,j)+temp(i,jm)
         #endif
         ! channel pressure driven (along x)
         !rhsu(i,j)=rhsu(i,j) + 1.d0
@@ -521,17 +477,14 @@ do t=1,ntmax
       c(j) =  1.0d0*dyi*dyi
       d(j) =  rhspc(i,j)
     end do
-
     ! Neumann BC at j=0 (ghost and first interior)
     b(0) = -1.0d0*dyi*dyi - kx2(i)
     c(0) =  1.0d0*dyi*dyi
     a(0) =  0.0d0
-
     ! Neumann BC at j=ny (top)
     a(ny+1) =  1.0d0*dyi*dyi
     b(ny+1) = -1.0d0*dyi*dyi - kx2(i)
     c(ny+1) =  0.0d0
-
     ! Special handling for kx=0 (mean mode)
     ! fix pressure on one point (otherwise is zero mean along x)
     if (i == 1) then
@@ -546,7 +499,6 @@ do t=1,ntmax
       b(j) = b(j) - factor * c(j-1)
       d(j) = d(j) - factor * d(j-1)
     end do
-
     ! Back substitution
     sol(ny+1) = d(ny+1) / b(ny+1)
     do j = ny, 0, -1
