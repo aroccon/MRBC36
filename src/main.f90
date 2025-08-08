@@ -21,9 +21,9 @@ double precision, parameter ::  beta(3)      = (/ 0.d0,       -17.d0/60.d0,  -5.
 !double precision, parameter ::  alpha(3) = (/ 1.d0,         3.d0/4.d0,    1.d0/3.d0 /) !rk3 ssp coef
 !double precision, parameter ::  beta(3)  = (/ 0.d0,         1.d0/4.d0,    2.d0/3.d0 /) !rk3 ssp coef
 
-#define phiflag 0
+#define phiflag 1
 #define tempflag 1
-#define impdifftemp 1
+#define impdifftemp 0
 
 call readinput
 
@@ -92,13 +92,13 @@ write(*,*) "Initialize velocity, temperature and phase-field"
 ! u velocity
 do i=1,nx
   do j=1,ny
-    u(i,j)=0.d0*sin(1.3d0*pi*(x(i)-dx/2))*cos(pi*(y(j)+dy/2))
+    u(i,j)=0.1d0*sin(1.3d0*pi*(x(i)-dx/2))*cos(pi*(y(j)+dy/2))
   enddo
 enddo
 ! v velocity
 do i=1,nx
   do j=1,ny-1
-    v(i,j)=-0.d0*cos(pi*(x(i)))*sin(pi*(y(j)-dy/2))
+    v(i,j)=-0.1d0*cos(pi*(x(i)))*sin(pi*(y(j)-dy/2))
   enddo
 enddo
 ! phase-field
@@ -120,14 +120,14 @@ do i=1,nx
   temp(i,1) =  1.0d0
 enddo
 ! output fields
-call writefield(t,1)
-call writefield(t,2)
-call writefield(t,3)
+call writefield(tstart,1)
+call writefield(tstart,2)
+call writefield(tstart,3)
 #if phiflag == 1
-call writefield(t,4)
+call writefield(tstart,4)
 #endif
 # if tempflag == 1
-call writefield(t,5)
+call writefield(tstart,5)
 #endif
 !##########################################################
 ! End fields init
@@ -141,7 +141,7 @@ call writefield(t,5)
 !##########################################################
 
 write(*,*) "Start temporal loop"
-do t=1,tfin
+do t=tstart,tfin
   call cpu_time(times)
   write(*,*) "Time step",t,"of",tfin
   #if phiflag == 1
@@ -149,6 +149,8 @@ do t=1,tfin
   ! START 1: Advance phase-field 
   !##########################################################
   ! Advection + diffusion term
+  gamma=1.0d0*max(umax,vmax)
+  write(*,*) "gamma", gamma
   !$acc kernels
   do j=2,ny-1
     do i=1,nx
@@ -443,7 +445,7 @@ do t=1,tfin
       jp=j+1
       if (ip .gt. nx) ip=1
       rhsp(i,j) =             (rho*dxi/dt)*(u(ip,j)-u(i,j))
-      rhsp(i,j) = rhsp(i,j) + (rho*dxi/dt)*(v(i,jp)-v(i,j))
+      rhsp(i,j) = rhsp(i,j) + (rho*dyi/dt)*(v(i,jp)-v(i,j))
     enddo
   enddo
   !$acc end kernels
@@ -537,54 +539,44 @@ do t=1,tfin
   !START 3C: Start correction step
   !##########################################################
   !$acc kernels
-  umax=0.d0
-  vmax=0.d0
   do i=1,nx
     ! correct u
     do j=1,ny
       im=i-1
       if (im < 1) im=nx
       u(i,j)=u(i,j) - dt/rho*(p(i,j)-p(im,j))*dxi
-      umax=max(umax,u(i,j))
     enddo
-    ! correct v
     do j=2,ny
       jm=j-1
-      v(i,j)=v(i,j) - dt/rho*(p(i,j)-p(i,jm))*dxi
-      vmax=max(vmax,v(i,j))
+      v(i,j)=v(i,j) - dt/rho*(p(i,j)-p(i,jm))*dyi
     enddo
   enddo
+  !$acc end kernels
 
-  cflx=umax*dt/dx
-  cfly=vmax*dt/dy
- ! write(*,*) "umax:", umax
- ! write(*,*) "vmax:", vmax
-  gamma=1.0d0*max(umax,vmax)
- ! write(*,*) "CFL number:", max(cflx,cfly), "Mean nusselt", nut, nub
+  cflx=umax*dt*dxi
+  cfly=vmax*dt*dyi
+  !write(*,*) "umax:", umax
+  !write(*,*) "vmax:", vmax
+  !gamma=1.0d0*max(umax,vmax)
+   write(*,*) "CFL number:", max(cflx,cfly)!, "Mean nusselt", (nut+nub)/2.d0
   write(*,*) "Mean nusselt", nut, nub
 
 
   ! re-impose BCs on the flow field
+  umax=0.d0
+  vmax=0.d0
+  !$acc parallel loop collapse(1) reduction(+:umax,vmax)
   do i=1,nx
     u(i,1)=0.d0
     u(i,ny)=0.0d0
     v(i,1)=0.0d0
     v(i,ny+1)=0.0d0
-  enddo
-  !$acc end kernels
-
-  !$acc kernels
-  do j=1,ny
-    do i=1,nx
-      ip=i+1
-      jp=j+1
-      if (ip .gt. nx) ip=1
-      div(i,j) =            (u(ip,j)-u(i,j))
-      div(i,j) = div(i,j) + (v(i,jp)-v(i,j))
+    do j=2,ny
+      umax=max(umax,u(i,j))
+      vmax=max(vmax,v(i,j))
     enddo
   enddo
-  !$acc end kernels
-  ! check divergence
+
   !##########################################################
   !END 3C: End correction step
   !##########################################################
