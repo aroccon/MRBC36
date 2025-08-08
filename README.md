@@ -1,9 +1,9 @@
 ## Multiphase Rayleigh-Benard 
-2D code for Phase-field simulation in Rayleigh-Bénard configurtion 
-Finite difference-based (FD2)
+Code for phase-field simulations in Rayleigh-Bénard configuration (2D).
+Numerical scheme: Finite difference-based (FD2)
 
 #Time integration
-- Temperature: SSP-RK3 + CN for Temperature along y
+- Temperature: SSP-RK3 + CN for Temperature along y (flag)
 - Navier-Stokes: RK3
 - Phase-field: RK3 (to be implemented)
 - NS: Fractional method, Poisson solver based on FFT (along x - periodic) + TDMA (y, walls).
@@ -38,14 +38,20 @@ Finite difference-based (FD2)
 ![Test](doc/val.png)
 
 
-## Example of RBC (Ra=1e9 + Pr=1)
+## Example of single-phase RBC (Ra=1e9 + Pr=1)
 
 ![Test](doc/rbc4.png)
 
+## Example of multiphase RBC (Ra=1e7 + Pr=1)
+
+![Test](doc/rbc5.png)
+
 ## Performance and resolution tested
 
-- 2048 x 1024 - 22 ms/iter - RTX5000 16GB
-- 4096 x 2048 - 80 ms/iter - RTX5000 16GB
+- 512 x 256 - 2.5 ms/iter - RTX5000 16GB (NS + Temp exp. + phase-field)
+- 512 x 256 - 0.7 ms/iter - A100 64GB (NS + Temp exp. + phase-field)
+- 2048 x 1024 - 22 ms/iter - RTX5000 16GB (NS + Temp exp.)
+- 4096 x 2048 - 80 ms/iter - RTX5000 16GB (NS + Temp exp.)
 
 ## Grid points (staggered)
 

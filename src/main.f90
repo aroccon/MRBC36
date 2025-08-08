@@ -336,7 +336,7 @@ do t=tstart,tfin
 
 
 
-  call nvtxStartRange("NS")
+  !call nvtxStartRange("NS")
   !##########################################################
   ! START 3A: Projection step for NS
   !##########################################################
@@ -452,9 +452,9 @@ do t=tstart,tfin
   !##########################################################
   ! END 3A: Rhs (from projection computed)
   !##########################################################
-  call nvtxEndRange
+  !call nvtxEndRange
 
-  call nvtxStartRange("Poisson")
+  !call nvtxStartRange("Poisson")
   !##########################################################
   ! 3B Start of Poisson solver, pressure in physical space obtained
   !##########################################################
@@ -533,7 +533,7 @@ do t=tstart,tfin
   !##########################################################
   !End STEP 3B of Poisson solver, pressure in physical space obtained
   !##########################################################
-  call nvtxEndRange
+  !call nvtxEndRange
   
   !##########################################################
   !START 3C: Start correction step
