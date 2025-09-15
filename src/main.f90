@@ -139,7 +139,7 @@ call writefield(tstart,5)
 !##########################################################
 ! Start temporal loop
 !##########################################################
-
+tstart=tstart+1
 write(*,*) "Start temporal loop"
 do t=tstart,tfin
   call cpu_time(times)
