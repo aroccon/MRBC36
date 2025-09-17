@@ -14,7 +14,9 @@ implicit none
 integer :: i, j, k, n, m, t
 integer :: ip,im,jp,jm
 double precision, allocatable :: x(:), y(:), kx(:), kx2(:)
-double complex :: a(0:ny+1), b(0:ny+1), c(0:ny+1), d(0:ny+1), sol(0:ny+1)
+double precision, allocatable :: a(:,:), b(:,:), c(:,:) !TDMA pressure (real)
+double complex,   allocatable :: d(:,:), sol(:,:) !TDMA pressure (complex variables)
+double precision, allocatable :: af(:,:), bf(:,:), cf(:,:), df(:,:), solf(:,:) !TDMA temperature
 integer :: planf, planb, status, stage
 double precision, parameter ::  alpha(3)     = (/ 8.d0/15.d0,   5.d0/12.d0,   3.d0/4.d0 /) !rk3 alpha coef
 double precision, parameter ::  beta(3)      = (/ 0.d0,       -17.d0/60.d0,  -5.d0/12.d0/) ! rk3 beta coef
@@ -22,7 +24,7 @@ double precision, parameter ::  beta(3)      = (/ 0.d0,       -17.d0/60.d0,  -5.
 !double precision, parameter ::  beta(3)  = (/ 0.d0,         1.d0/4.d0,    2.d0/3.d0 /) !rk3 ssp coef
 
 #define phiflag 1
-#define tempflag 1
+#define tempflag 0
 #define impdifftemp 0
 
 call readinput
@@ -43,6 +45,12 @@ allocate(u(nx,ny),v(nx,ny+1))
 allocate(rhsu(nx,ny),rhsv(nx,ny+1))
 allocate(rhsu_o(nx,ny),rhsv_o(nx,ny+1))
 allocate(div(nx,ny))
+
+! tdma variables (separated becasue they have different size)
+allocate(a(nx/2+1,0:ny+1),b(nx/2+1,0:ny+1),c(nx/2+1,0:ny+1),d(nx/2+1,0:ny+1),sol(nx/2+1,0:ny+1)) ! pressure
+#if impdifftemp == 1
+allocate(af(nx,0:ny+1),bf(nx,0:ny+1),cf(nx,0:ny+1),df(nx,0:ny+1),solf(nx,0:ny+1)) ! temperature
+#endif
 
 ! phase-field variables (defined on centers)
 ! add 0:ny+1, i.e. ghost nodes also for phi?
@@ -71,18 +79,16 @@ do i = 1,nx/2+1
   kx2(i) = kx(i)**2
 end do
 
-! create plans
-! Forward along x
+! create plan forward x
 status=0
 status=status + cufftCreate(planf)
 status=status + cufftPlanMany(planf, 1, nx, [nx, ny], 1, nx, [nx/2+1,ny], 1, nx/2+1, CUFFT_D2Z, ny) 
 if (status.ne.0) write(*,*) "Error in cuFFT plan FWD:", status
-
-! Backward along x
+! Create plan backward x
 status=0
 status=status + cufftCreate(planb)
 status=status + cufftPlanMany(planb, 1, nx, [nx/2+1,ny], 1, nx/2+1, [nx,ny], 1, nx, CUFFT_Z2D, ny) 
-
+if (status.ne.0) write(*,*) "Error in cuFFT plan BWD:", status
 
 
 !##########################################################
@@ -92,32 +98,32 @@ write(*,*) "Initialize velocity, temperature and phase-field"
 ! u velocity
 do i=1,nx
   do j=1,ny
-    u(i,j)=0.1d0*sin(1.3d0*pi*(x(i)-dx/2))*cos(pi*(y(j)+dy/2))
+    u(i,j)=0.d0!0.1d0*sin(1.3d0*pi*(x(i)-dx/2))*cos(pi*(y(j)+dy/2))
   enddo
 enddo
 ! v velocity
 do i=1,nx
   do j=1,ny-1
-    v(i,j)=-0.1d0*cos(pi*(x(i)))*sin(pi*(y(j)-dy/2))
+    v(i,j)=0.d0!-0.1d0*cos(pi*(x(i)))*sin(pi*(y(j)-dy/2))
   enddo
 enddo
 ! phase-field
 do i=1,nx
   do j=1,ny
     pos=(x(i)-lx/2)**2d0 + (y(j)-ly/2)**2d0
-    phi(i,j)=0.5d0*(1.d0-tanh((sqrt(pos)-radius)/2.d0/eps))
+    phi(i,j)=0.5d0*(1.d0-tanh((sqrt(pos)-radius)/(2.d0*eps)))
   enddo
 enddo
 ! temperature (internal + boundaries)
 do j=2,ny-1
   do i=1,nx
     call random_number(noise)
-    temp(i,j) = 1.0d0 - y(j) + 0.001d0*(2.0d0*noise - 1.0d0)
+    temp(i,j) = 0.0d0 !- y(j) + 0.001d0*(2.0d0*noise - 1.0d0)
   enddo
 enddo
 do i=1,nx
   temp(i,ny) = 0.0d0
-  temp(i,1) =  1.0d0
+  temp(i,1) =  0.0d0
 enddo
 ! output fields
 call writefield(tstart,1)
@@ -140,6 +146,7 @@ call writefield(tstart,5)
 ! Start temporal loop
 !##########################################################
 tstart=tstart+1
+!$acc data copyin(u,v,phi,temp) copy(p) create(rhsu,rhsv,rhsphi,rhstemp,psidi,normx,normy,fxst,fyst,a,b,c,d,sol)
 write(*,*) "Start temporal loop"
 do t=tstart,tfin
   call cpu_time(times)
@@ -160,11 +167,10 @@ do t=tstart,tfin
       jm=j-1
       if (ip .gt. nx) ip=1
       if (im .lt. 1) im=nx
-      ! Advection 
+      ! Advection + diffusion
       rhsphi(i,j)=-(u(ip,j)*0.5*(phi(ip,j)+phi(i,j)) - u(i,j)*0.5*(phi(i,j)+phi(im,j)))*dxi -(v(i,jp)*0.5*(phi(i,jp)+phi(i,j)) - v(i,j)*0.5*(phi(i,j)+phi(i,jm)))*dyi
-      ! Add diffusion
       rhsphi(i,j)=rhsphi(i,j) + gamma*eps*((phi(ip,j)-2.d0*phi(i,j)+phi(im,j))*ddxi + (phi(i,jp) -2.d0*phi(i,j) +phi(i,jm))*ddyi) 
-      val = min(phi(i,j),1.d0) ! avoid machine precision overshoots in phi that leads to problem with log
+      val = max(0.d0, min(phi(i,j), 1.d0)) ! avoid machine precision overshoots in phi that leads to problem with log
       psidi(i,j) = eps*log((val+enum)/(1.d0-val+enum))
     enddo
   enddo
@@ -179,8 +185,8 @@ do t=tstart,tfin
       if (ip .gt. nx) ip=1
       if (im .lt. 1) im=nx
       ! Compute normals
-      normx(i,j) = (psidi(ip,j)-psidi(im,j))
-      normy(i,j) = (psidi(i,jp)-psidi(i,jm))
+      normx(i,j) = 0.5d0*(psidi(ip,j)-psidi(im,j))*dxi
+      normy(i,j) = 0.5d0*(psidi(i,jp)-psidi(i,jm))*dyi
       normod = 1.0d0/(sqrt(normx(i,j)**2d0 + normy(i,j)**2d0) + enum)
       normx(i,j) = normx(i,j)*normod
       normy(i,j) = normy(i,j)*normod 
@@ -201,8 +207,8 @@ do t=tstart,tfin
   enddo
 
   ! phase-field n+1 (Euler explicit)
-  do i=1,nx
-    do j=2,ny-1
+  do j=2,ny-1
+    do i=1,nx
       phi(i,j) = phi(i,j)  + dt*rhsphi(i,j);
     enddo
   enddo
@@ -232,8 +238,8 @@ do t=tstart,tfin
   tempn=temp !tempn is the temperature at time step n (the initial one)
   do stage=1,3
     !$acc kernels
-    do i=1,nx
-      do j=2,ny-1
+    do j=2,ny-1
+      do i=1,nx
         ip=i+1
         im=i-1
         jp=j+1
@@ -253,15 +259,15 @@ do t=tstart,tfin
       enddo
     enddo
     ! New provisional temperature field
-    do i=1,nx
-      do j=1,ny
+    do j=1,ny
+      do i=1,nx
         temp(i,j) = temp(i,j)  + dt*(alpha(stage)*rhstemp(i,j)+ alpha(stage)*rhstemp_o(i,j))
         rhstemp_o(i,j)=rhstemp(i,j)
       enddo
     enddo
     ! BC during RK stages
     do i=1,nx
-      temp(i,1) =  1.0d0
+      temp(i,1) =  0.0d0
       temp(i,ny) = 0.0d0
     enddo
     !$acc end kernels
@@ -270,48 +276,43 @@ do t=tstart,tfin
   #if impdifftemp == 1
   ! add the y diffusive of temperature implicit
   lambda = 0.5d0*difftemp*dt*ddyi ! then move in readinput
-  !$acc parallel loop gang private(a, b, c, d, sol, factor)
+  !$acc parallel loop gang vector present(af, bf, cf, df, solf)
   do i=1,nx
     ! Build TDMA arrays for interior points only
     do j=2,ny-1
-      a(j) = -lambda
-      b(j) =  1.0d0 + 2.0d0*lambda
-      c(j) = -lambda
-      d(j) =  temp(i,j) + lambda*(temp(i,j+1)-2.0d0*temp(i,j) + temp(i,j-1))
+      af(i,j) = -lambda
+      bf(i,j) =  1.0d0 + 2.0d0*lambda
+      cf(i,j) = -lambda
+      df(i,j) =  temp(i,j) + lambda*(temp(i,j+1)-2.0d0*temp(i,j) + temp(i,j-1))
     enddo
     ! Boundary conditions
-    a(1)=0.0d0
-    b(1)=1.0d0
-    c(1)=0.0d0
-    d(1)=1.0d0  ! bottom hot
-    a(ny)=0.0d0
-    b(ny)=1.0d0
-    c(ny)=0.0d0
-    d(ny)=0.0d0 ! top cold
+    af(i,1)=0.0d0
+    bf(i,1)=1.0d0
+    cf(i,1)=0.0d0
+    df(i,1)=1.0d0  ! bottom hot
+    af(i,ny)=0.0d0
+    bf(i,ny)=1.0d0
+    cf(i,ny)=0.0d0
+    df(i,ny)=0.0d0 ! top cold
 
-    ! TDMA SOLVER
-    ! Forward sweep
+    ! TDMA SOLVER - Forward sweep
     !$acc loop seq
     do j = 2, ny
-      factor = a(j)/b(j-1)
-      b(j) = b(j) - factor*c(j-1)
-      d(j) = d(j) - factor*d(j-1)
+      factor = af(i,j)/bf(i,j-1)
+      bf(i,j) = bf(i,j) - factor*cf(i,j-1)
+      df(i,j) = df(i,j) - factor*df(i,j-1)
     enddo
-
     ! Back substitution
-    sol(ny) = d(ny)/b(ny)
+    solf(i,ny) = df(i,ny)/bf(i,ny)
     !$acc loop seq
     do j=ny-1, 1, -1
-      sol(j) = (d(j) - c(j)*sol(j+1))/b(j)
+      solf(i,j) = (df(i,j) - cf(i,j)*solf(i,j+1))/bf(i,j)
     end do
-
     do j=1, ny
-      temp(i,j)=sol(j)
+      temp(i,j)=solf(i,j)
     enddo
   enddo
   #endif
-
-
   ! compute bottom and top nusselt numbers
   nut=0.0d0
   nub=0.0d0
@@ -322,21 +323,15 @@ do t=tstart,tfin
   enddo
   nut=nut/nx
   nub=nub/nx
-
-
-  !write(*,*) "Mean nusselt", (nut+nub)/2
   #endif
   !##########################################################
-  ! END 2: Temperature an n+1 obtained
+  ! END 2: Temperature at n+1 obtained
   !##########################################################
 
 
 
 
 
-
-
-  !call nvtxStartRange("NS")
   !##########################################################
   ! START 3A: Projection step for NS
   !##########################################################
@@ -351,16 +346,11 @@ do t=tstart,tfin
         jm=j-1
         if (ip .gt. nx) ip=1
         if (im .lt. 1) im=nx
-        ! compute the products (conservative form)
-        h11 = (u(ip,j)+u(i,j))*(u(ip,j)+u(i,j))     - (u(i,j)+u(im,j))*(u(i,j)+u(im,j))
-        h12 = (u(i,jp)+u(i,j))*(v(i,jp)+v(im,jp))   - (u(i,j)+u(i,jm))*(v(i,j)+v(im,j))
-        h21 = (u(ip,j)+u(ip,jm))*(v(ip,j)+v(i,j))   - (u(i,j)+u(i,jm))*(v(i,j)+v(im,j))
-        h22 = (v(i,jp)+v(i,j))*(v(i,jp)+v(i,j))     - (v(i,j)+v(i,jm))*(v(i,j)+v(i,jm))
-        ! compute the derivative
-        h11=h11*0.25d0*dxi
-        h12=h12*0.25d0*dyi
-        h21=h21*0.25d0*dxi
-        h22=h22*0.25d0*dyi
+        ! compute the advection term (conservative form)
+        h11 = 0.25d0*((u(ip,j)+u(i,j))*(u(ip,j)+u(i,j))     - (u(i,j)+u(im,j))*(u(i,j)+u(im,j)))*dxi
+        h12 = 0.25d0*((u(i,jp)+u(i,j))*(v(i,jp)+v(im,jp))   - (u(i,j)+u(i,jm))*(v(i,j)+v(im,j)))*dyi
+        h21 = 0.25d0*((u(ip,j)+u(ip,jm))*(v(ip,j)+v(i,j))   - (u(i,j)+u(i,jm))*(v(i,j)+v(im,j)))*dxi
+        h22 = 0.25d0*((v(i,jp)+v(i,j))*(v(i,jp)+v(i,j))     - (v(i,j)+v(i,jm))*(v(i,j)+v(i,jm)))*dyi
         ! add advection to the rhs
         rhsu(i,j)=-(h11+h12)
         rhsv(i,j)=-(h21+h22)
@@ -373,7 +363,7 @@ do t=tstart,tfin
         rhsv(i,j)=rhsv(i,j)+(h21+h22)*rhoi
         ! add buoyancy term
         #if tempflag == 1
-        rhsv(i,j)=rhsv(i,j) + temp(i,j)+temp(i,jm)
+        rhsv(i,j)=rhsv(i,j) + 0.5d0*(temp(i,j) + temp(i,jm))
         #endif
         ! channel pressure driven (along x)
         !rhsu(i,j)=rhsu(i,j) + 1.d0
@@ -381,7 +371,7 @@ do t=tstart,tfin
     enddo
     !$acc end kernels
 
-    ! Compute surface tension forces 
+    ! Compute surface tension forces (LCSF mehthod, see Assessment of an energy-based surface tension model for simulation of...)
     #if phiflag == 1
     !$acc kernels
     do j=2,ny-1
@@ -392,25 +382,29 @@ do t=tstart,tfin
         jm=j-1
         if (ip .gt. nx) ip=1
         if (im .lt. 1) im=nx
-        chempot=phi(i,j)*(1.d0-phi(i,j))*(1.d0-2.d0*phi(i,j))*epsi-eps*(phi(ip,j)+phi(im,j)+phi(i,jp)+phi(i,jm)- 4.d0*phi(i,j))*ddxi
-        fxst(i,j)=6.d0*sigma*chempot*0.5d0*(phi(ip,j)-phi(im,j))*dxi
-        fyst(i,j)=6.d0*sigma*chempot*0.5d0*(phi(i,jp)-phi(i,jm))*dyi
+        curv=0.5d0*(normx(ip,j)-normx(im,j))*dxi + 0.5d0*(normy(i,jp)-normy(i,jm))*dyi
+        fxst(i,j)= -sigma*curv*0.5d0*(phi(ip,j)-phi(im,j))*dxi!*phi(i,j)*(1.d0-phi(i,j))
+        fyst(i,j)= -sigma*curv*0.5d0*(phi(i,jp)-phi(i,jm))*dyi!*phi(i,j)*(1.d0-phi(i,j))
       enddo
     enddo
     !$acc end kernels
 
     !$acc kernels
     ! Add surface tension forces to RHS (do not merge with above!)
-    do j=2,ny
+    do j=2,ny-1
       do i=1,nx
         im=i-1
         jm=j-1
         if (im .lt. 1) im=nx
-        rhsu(i,j)=rhsu(i,j)+0.5d0*(fxst(im,j)+fxst(i,j))*rhoi
-        rhsv(i,j)=rhsv(i,j)+0.5d0*(fyst(i,jm)+fyst(i,j))*rhoi
+        rhsu(i,j)=rhsu(i,j) + 0.5d0*(fxst(im,j)+fxst(i,j))*rhoi
+        rhsv(i,j)=rhsv(i,j) + 0.5d0*(fyst(i,jm)+fyst(i,j))*rhoi
       enddo
     enddo
     !$acc end kernels
+
+    !open(unit=55,file='out.dat',form='unformatted',position='append',access='stream',status='new')
+    !write(55) normx(:,:)
+    !close(55)
     #endif
 
     ! find u, v and w star (AB2), overwrite u,v and w
@@ -466,7 +460,7 @@ do t=tstart,tfin
   !$acc end data
   if (status.ne.0) stop "cufftExecD2Z failed"
 
-  !$acc parallel loop gang private(a, b, c, d, sol, factor)
+  !$acc parallel loop gang vector present(a,b,c,d,sol,pc,rhspc,kx2)
   do i=1,nx/2+1
     ! Set up tridiagonal system for each kx
     ! The system is: (A_j) * pc(kx,j-1) + (B_j) * pc(kx,j) + (C_j) * pc(kx,j+1) = rhs(kx,j)
@@ -474,42 +468,42 @@ do t=tstart,tfin
     ! Neumann BC: d/dy pc = 0 at j=1 and j=ny
     ! Fill diagonals and rhs for each y
     do j = 1, ny
-      a(j) =  1.0d0*dyi*dyi
-      b(j) = -2.0d0*dyi*dyi - kx2(i)
-      c(j) =  1.0d0*dyi*dyi
-      d(j) =  rhspc(i,j)
+      a(i,j) =  1.0d0*ddyi
+      b(i,j) = -2.0d0*ddyi - kx2(i)
+      c(i,j) =  1.0d0*ddyi
+      d(i,j) =  rhspc(i,j)
     end do
     ! Neumann BC at j=0 (ghost and first interior)
-    b(0) = -1.0d0*dyi*dyi - kx2(i)
-    c(0) =  1.0d0*dyi*dyi
-    a(0) =  0.0d0
+    b(i,0) = -1.0d0*ddyi - kx2(i)
+    c(i,0) =  1.0d0*ddyi
+    a(i,0) =  0.0d0
     ! Neumann BC at j=ny (top)
-    a(ny+1) =  1.0d0*dyi*dyi
-    b(ny+1) = -1.0d0*dyi*dyi - kx2(i)
-    c(ny+1) =  0.0d0
+    a(i,ny+1) =  1.0d0*ddyi
+    b(i,ny+1) = -1.0d0*ddyi - kx2(i)
+    c(i,ny+1) =  0.0d0
     ! Special handling for kx=0 (mean mode)
     ! fix pressure on one point (otherwise is zero mean along x)
     if (i == 1) then
-        b(1) = 1.0d0
-        c(1) = 0.0d0
-        d(1) = 0.0d0
+        b(i,1) = 1.0d0
+        c(i,1) = 0.0d0
+        d(i,1) = 0.0d0
     endif
     ! Thomas algorithm (TDMA) for tridiagonal system 
     ! Forward sweep
     do j = 1, ny+1
-      factor = a(j)/b(j-1)
-      b(j) = b(j) - factor * c(j-1)
-      d(j) = d(j) - factor * d(j-1)
+      factor = a(i,j)/b(i,j-1)
+      b(i,j) = b(i,j) - factor * c(i,j-1)
+      d(i,j) = d(i,j) - factor * d(i,j-1)
     end do
     ! Back substitution
-    sol(ny+1) = d(ny+1) / b(ny+1)
+    sol(i,ny+1) = d(i,ny+1) / b(i,ny+1)
     do j = ny, 0, -1
-      sol(j) = (d(j) - c(j) * sol(j+1)) / b(j)
+      sol(i,j) = (d(i,j) - c(i,j) * sol(i,j+1)) / b(i,j)
     end do
 
     ! Store solution (copy only interior nodes)
     do j = 1, ny
-      pc(i,j) = sol(j)
+      pc(i,j) = sol(i,j)
     end do
   end do
   !!$acc end kernels
@@ -525,15 +519,9 @@ do t=tstart,tfin
   !$acc kernels
   p=p/nx
   !$acc end kernels
-
-  ! write pressure (debug only)
-  !open(unit=55,file='out.dat',form='unformatted',position='append',access='stream',status='new')
-  !write(55) p(:,:)
-  !close(55)
   !##########################################################
   !End STEP 3B of Poisson solver, pressure in physical space obtained
   !##########################################################
-  !call nvtxEndRange
   
   !##########################################################
   !START 3C: Start correction step
@@ -555,10 +543,7 @@ do t=tstart,tfin
 
   cflx=umax*dt*dxi
   cfly=vmax*dt*dyi
-  !write(*,*) "umax:", umax
-  !write(*,*) "vmax:", vmax
-  !gamma=1.0d0*max(umax,vmax)
-   write(*,*) "CFL number:", max(cflx,cfly)!, "Mean nusselt", (nut+nub)/2.d0
+  write(*,*) "CFL number:", max(cflx,cfly)
   write(*,*) "Mean nusselt", nut, nub
 
 
@@ -582,7 +567,6 @@ do t=tstart,tfin
   !##########################################################
 
 
-
   call cpu_time(timef)
   print '(" Time elapsed = ",f6.1," ms")',1000*(timef-times)
 
@@ -602,11 +586,12 @@ do t=tstart,tfin
   endif
 
 enddo
+!$acc end data
 
 !write pressure (debug only)
-open(unit=55,file='output/div.dat',form='unformatted',position='append',access='stream',status='new')
-write(55) div
-close(55)
+!open(unit=55,file='output/div.dat',form='unformatted',position='append',access='stream',status='new')
+!write(55) div
+!close(55)
 
 deallocate(x,y)
 !deallocate(a,b,c,d,sol)
