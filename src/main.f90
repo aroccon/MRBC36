@@ -23,8 +23,8 @@ double precision, parameter ::  beta(3)      = (/ 0.d0,       -17.d0/60.d0,  -5.
 !double precision, parameter ::  alpha(3) = (/ 1.d0,         3.d0/4.d0,    1.d0/3.d0 /) !rk3 ssp coef
 !double precision, parameter ::  beta(3)  = (/ 0.d0,         1.d0/4.d0,    2.d0/3.d0 /) !rk3 ssp coef
 
-#define phiflag 1
-#define tempflag 0
+#define phiflag 0
+#define tempflag 1
 #define impdifftemp 0
 
 call readinput
@@ -98,13 +98,13 @@ write(*,*) "Initialize velocity, temperature and phase-field"
 ! u velocity
 do i=1,nx
   do j=1,ny
-    u(i,j)=0.d0!0.1d0*sin(1.3d0*pi*(x(i)-dx/2))*cos(pi*(y(j)+dy/2))
+    u(i,j)= 0.1d0*sin(1.3d0*pi*(x(i)-dx/2))*cos(pi*(y(j)+dy/2))
   enddo
 enddo
 ! v velocity
 do i=1,nx
   do j=1,ny-1
-    v(i,j)=0.d0!-0.1d0*cos(pi*(x(i)))*sin(pi*(y(j)-dy/2))
+    v(i,j)=-0.1d0*cos(pi*(x(i)))*sin(pi*(y(j)-dy/2))
   enddo
 enddo
 ! phase-field
@@ -118,12 +118,12 @@ enddo
 do j=2,ny-1
   do i=1,nx
     call random_number(noise)
-    temp(i,j) = 0.0d0 !- y(j) + 0.001d0*(2.0d0*noise - 1.0d0)
+    temp(i,j) = 1.0 - y(j) + 0.001d0*(2.0d0*noise - 1.0d0)
   enddo
 enddo
 do i=1,nx
   temp(i,ny) = 0.0d0
-  temp(i,1) =  0.0d0
+  temp(i,1) =  1.0d0
 enddo
 ! output fields
 call writefield(tstart,1)
@@ -267,7 +267,7 @@ do t=tstart,tfin
     enddo
     ! BC during RK stages
     do i=1,nx
-      temp(i,1) =  0.0d0
+      temp(i,1) =  1.0d0
       temp(i,ny) = 0.0d0
     enddo
     !$acc end kernels
@@ -401,10 +401,6 @@ do t=tstart,tfin
       enddo
     enddo
     !$acc end kernels
-
-    !open(unit=55,file='out.dat',form='unformatted',position='append',access='stream',status='new')
-    !write(55) normx(:,:)
-    !close(55)
     #endif
 
     ! find u, v and w star (AB2), overwrite u,v and w

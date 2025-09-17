@@ -4,7 +4,7 @@ module param
   double precision :: dx, dy, lx, ly, acoeff, q, l2norm, err, dyi, factor, twopi
   double precision :: radius, eps, epsi, gamma, rho, mu, dxi, ddxi, ddyi, normod, dt
   double precision :: umax=0.0d0, vmax=0.d0, val, lambda
-  double precision :: chempot, sigma, cflx, cfly, ra, pr, nut, nub, num, noise, enum
+  double precision :: chempot, curv, sigma, cflx, cfly, ra, pr, nut, nub, num, noise, enum
   double precision :: pos, epsr, times, timef, difftemp, h11, h12, h21, h22, rhoi
   integer :: tstart, tfin, restart, dump
 end module param
