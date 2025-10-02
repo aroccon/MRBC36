@@ -267,8 +267,8 @@ do t=tstart,tfin
     enddo
     ! BC during RK stages
     do i=1,nx
-      temp(i,1) =  1.0d0
-      temp(i,ny) = 0.0d0
+      temp(i,1) =   0.5d0
+      temp(i,ny) = -0.5d0
     enddo
     !$acc end kernels
   enddo
@@ -363,7 +363,7 @@ do t=tstart,tfin
         rhsv(i,j)=rhsv(i,j)+(h21+h22)*rhoi
         ! add buoyancy term
         #if tempflag == 1
-        rhsv(i,j)=rhsv(i,j) + 0.5d0*(temp(i,j) + temp(i,jm))
+        rhsv(i,j)=rhsv(i,j) + 0.5d0*(temp(i,j) + alphag*temp(i,jm))
         #endif
         ! channel pressure driven (along x)
         !rhsu(i,j)=rhsu(i,j) + 1.d0

@@ -12,7 +12,8 @@ read(55,*) tfin
 read(55,*) dump
 !Flow parameters
 read(55,*) dt
-read(55,*) ra
+read(55,*) rho
+read(55,*) mu
 read(55,*) pr
 read(55,*) lx
 read(55,*) ly
@@ -25,9 +26,9 @@ read(55,*) epsr
 
 ! compute pre-defined constant 
 twopi=2.d0*pi 
-rho=1.d0
-difftemp=sqrt(pr/ra)! sqrt(Ra) with Ra=2e6 
-mu=sqrt(1.d0/ra) ! sqrt(1/Ra) with Ra=2e6 
+difftemp=pr*mu
+!difftemp=sqrt(pr/ra)! sqrt(Ra) with Ra=2e6 
+!mu=sqrt(1.d0/ra) ! sqrt(1/Ra) with Ra=2e6 
 dx = lx/(nx)
 dy = ly/(ny-1)
 dxi=1.d0/dx
@@ -50,7 +51,8 @@ write(*,*) "------------------------------------------------------"
 write(*,*) "Grid:    ", nx, 'x', ny
 write(*,*) "Tfin     ", tfin
 write(*,*) "Dump        ", dump
-write(*,*) "Rayleigh       ", ra
+write(*,*) "Density      ", rho
+write(*,*) "Viscosity      ", mu
 write(*,*) "Prandtl        ", pr
 write(*,*) "Radius          ", radius
 write(*,*) "Sigma          ", sigma
