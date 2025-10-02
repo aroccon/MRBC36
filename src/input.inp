@@ -5,8 +5,8 @@
 0.0001     ! dt for the simulation
 1.e7        ! rayleigh (viscosity)
 1.000       ! pr
-2.0         ! lx
-1.0         ! ly
+2048         ! lx
+1024         ! ly
 0.4         ! Initial drop radius for phase-field
 0.001d0       ! Surface tension
 1.0         ! Ratio eps/dx

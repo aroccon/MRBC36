@@ -50,8 +50,8 @@ Numerical scheme: Finite difference-based (FD2)
 
 - 512 x 256 - 2.5 ms/iter - RTX5000 16GB (NS + Temp exp. + phase-field)
 - 512 x 256 - 0.7 ms/iter - A100 64GB (NS + Temp exp. + phase-field)
-- 2048 x 1024 - 22 ms/iter - RTX5000 16GB (NS + Temp exp.)
-- 4096 x 2048 - 80 ms/iter - RTX5000 16GB (NS + Temp exp.)
+- 2048 x 1024 - 20 ms/iter - RTX5000 16GB (NS + Temp exp.)
+- 4096 x 2048 - 70 ms/iter - RTX5000 16GB (NS + Temp exp.)
 
 ## Grid points (staggered)
 
