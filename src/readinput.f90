@@ -14,6 +14,8 @@ read(55,*) dump
 read(55,*) dt
 read(55,*) rho
 read(55,*) mu
+! temperature parameters
+read(55,*) alphag
 read(55,*) pr
 read(55,*) lx
 read(55,*) ly
@@ -53,7 +55,9 @@ write(*,*) "Tfin     ", tfin
 write(*,*) "Dump        ", dump
 write(*,*) "Density      ", rho
 write(*,*) "Viscosity      ", mu
+write(*,*) "Alphag.        ", alphag
 write(*,*) "Prandtl        ", pr
+write(*,*) "Difftemp (from Pr)", difftemp
 write(*,*) "Radius          ", radius
 write(*,*) "Sigma          ", sigma
 write(*,*) "Eps             ", eps

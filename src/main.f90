@@ -363,7 +363,7 @@ do t=tstart,tfin
         rhsv(i,j)=rhsv(i,j)+(h21+h22)*rhoi
         ! add buoyancy term
         #if tempflag == 1
-        rhsv(i,j)=rhsv(i,j) + 0.5d0*(temp(i,j) + alphag*temp(i,jm))
+        rhsv(i,j)=rhsv(i,j) + alphag*0.5d0*(temp(i,j) + temp(i,jm)) !interpolated at v location
         #endif
         ! channel pressure driven (along x)
         !rhsu(i,j)=rhsu(i,j) + 1.d0
@@ -383,8 +383,8 @@ do t=tstart,tfin
         if (ip .gt. nx) ip=1
         if (im .lt. 1) im=nx
         curv=0.5d0*(normx(ip,j)-normx(im,j))*dxi + 0.5d0*(normy(i,jp)-normy(i,jm))*dyi
-        fxst(i,j)= -sigma*curv*0.5d0*(phi(ip,j)-phi(im,j))*dxi!*phi(i,j)*(1.d0-phi(i,j))
-        fyst(i,j)= -sigma*curv*0.5d0*(phi(i,jp)-phi(i,jm))*dyi!*phi(i,j)*(1.d0-phi(i,j))
+        fxst(i,j)= -sigma/rho*curv*0.5d0*(phi(ip,j)-phi(im,j))*dxi!*phi(i,j)*(1.d0-phi(i,j))
+        fyst(i,j)= -sigma/rho*curv*0.5d0*(phi(i,jp)-phi(i,jm))*dyi!*phi(i,j)*(1.d0-phi(i,j))
       enddo
     enddo
     !$acc end kernels
