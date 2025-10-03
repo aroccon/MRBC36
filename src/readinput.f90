@@ -20,6 +20,7 @@ read(55,*) pr
 read(55,*) lx
 read(55,*) ly
 ! phase-field parameters
+read(55,*) icphi
 read(55,*) radius
 read(55,*) sigma
 read(55,*) epsr   
@@ -55,7 +56,7 @@ write(*,*) "Tfin     ", tfin
 write(*,*) "Dump        ", dump
 write(*,*) "Density      ", rho
 write(*,*) "Viscosity      ", mu
-write(*,*) "Alphag.        ", alphag
+write(*,*) "Alphag        ", alphag
 write(*,*) "Prandtl        ", pr
 write(*,*) "Difftemp (from Pr)", difftemp
 write(*,*) "Radius          ", radius

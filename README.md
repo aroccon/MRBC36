@@ -28,7 +28,6 @@ Numerical scheme: Finite difference-based (FD2)
 - RB setup ✅ 
 - GPU offloading of entire code  ✅
 - TDMA optimization (x 10 speed-up)  ✅
-- Some kernels can be improved (from profile, 1.5x/2.0x overall potential speed-up) 🚧
 
 ## Validation  
 - Aspect ratio: 2
@@ -36,7 +35,6 @@ Numerical scheme: Finite difference-based (FD2)
 - Grid: 512 x 256
 
 ![Test](doc/val.png)
-
 
 ## Example of single-phase RBC (Ra=1e9 + Pr=1)
 
@@ -50,7 +48,7 @@ Numerical scheme: Finite difference-based (FD2)
 
 - 512 x 256 - 2.5 ms/iter - RTX5000 16GB (NS + Temp exp. + phase-field)
 - 512 x 256 - 0.7 ms/iter - A100 64GB (NS + Temp exp. + phase-field)
-- 2048 x 1024 - 20 ms/iter - RTX5000 16GB (NS + Temp exp.)
+- 2048 x 1024 - 19 ms/iter - RTX5000 16GB (NS + Temp exp.)
 - 4096 x 2048 - 70 ms/iter - RTX5000 16GB (NS + Temp exp.)
 
 ## Grid points (staggered)

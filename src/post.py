@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 nx, ny = 512, 256
 
 #data = np.fromfile('out.dat', dtype=np.float64)  # or float64
-data = np.fromfile('output/t_00100000.dat', dtype=np.float64)  # or float64
+data = np.fromfile('output/phi_00010000.dat', dtype=np.float64)  # or float64
 print("Data size:", data.size)
 data = data.reshape((ny, nx))  # rows = y, columns = x
 
@@ -28,4 +28,4 @@ plt.show()
 #plt.tight_layout()
 #plt.show()
 
-# %%
+ # %%

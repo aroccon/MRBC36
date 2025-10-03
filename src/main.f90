@@ -23,7 +23,7 @@ double precision, parameter ::  beta(3)      = (/ 0.d0,       -17.d0/60.d0,  -5.
 !double precision, parameter ::  alpha(3) = (/ 1.d0,         3.d0/4.d0,    1.d0/3.d0 /) !rk3 ssp coef
 !double precision, parameter ::  beta(3)  = (/ 0.d0,         1.d0/4.d0,    2.d0/3.d0 /) !rk3 ssp coef
 
-#define phiflag 0
+#define phiflag 1
 #define tempflag 1
 #define impdifftemp 0
 
@@ -108,12 +108,20 @@ do i=1,nx
   enddo
 enddo
 ! phase-field
-do i=1,nx
-  do j=1,ny
-    pos=(x(i)-lx/2)**2d0 + (y(j)-ly/2)**2d0
-    phi(i,j)=0.5d0*(1.d0-tanh((sqrt(pos)-radius)/(2.d0*eps)))
+if (icphi .eq. 0) then
+  do i=1,nx
+    do j=1,ny
+      pos=(x(i)-lx/2)**2d0 + (y(j)-ly/2)**2d0
+      phi(i,j)=0.5d0*(1.d0-tanh((sqrt(pos)-radius)/(2.d0*eps)))
+    enddo
   enddo
-enddo
+endif
+if (icphi .eq. 1) then
+  write(*,*) "Reading phi for IC"
+  open(unit=666,file='phi_initial.dat',form='unformatted',access='stream',status='old',convert='little_endian')
+  read(666) phi
+  close(666)
+endif
 ! temperature (internal + boundaries)
 do j=2,ny-1
   do i=1,nx

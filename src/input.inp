@@ -9,6 +9,7 @@
 1.000       ! pr
 2048        ! lx
 1024        ! ly
+1           ! Initial condition phase-field (one drop or read from file)
 0.4         ! Initial drop radius for phase-field
 0.0325      ! Surface tension
 1.0         ! Ratio eps/dx
