@@ -23,7 +23,7 @@ double precision, parameter ::  beta(3)      = (/ 0.d0,       -17.d0/60.d0,  -5.
 !double precision, parameter ::  alpha(3) = (/ 1.d0,         3.d0/4.d0,    1.d0/3.d0 /) !rk3 ssp coef
 !double precision, parameter ::  beta(3)  = (/ 0.d0,         1.d0/4.d0,    2.d0/3.d0 /) !rk3 ssp coef
 
-#define phiflag 1
+#define phiflag 0
 #define tempflag 1
 #define impdifftemp 0
 
@@ -118,12 +118,12 @@ enddo
 do j=2,ny-1
   do i=1,nx
     call random_number(noise)
-    temp(i,j) = 1.0 - y(j) + 0.001d0*(2.0d0*noise - 1.0d0)
+    temp(i,j) = 0.5d0 - y(j)/ly + 0.001d0*(2.0d0*noise - 1.0d0)
   enddo
 enddo
 do i=1,nx
-  temp(i,ny) = 0.0d0
-  temp(i,1) =  1.0d0
+  temp(i,ny) = -0.5d0
+  temp(i,1) =   0.5d0
 enddo
 ! output fields
 call writefield(tstart,1)
@@ -321,8 +321,8 @@ do t=tstart,tfin
     nut=nut + (temp(i,1)-temp(i,2))*dyi
     nub=nub + (temp(i,ny-1)-temp(i,ny))*dyi
   enddo
-  nut=nut/nx
-  nub=nub/nx
+  nut=nut/nx*ly
+  nub=nub/nx*ly
   #endif
   !##########################################################
   ! END 2: Temperature at n+1 obtained

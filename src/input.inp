@@ -2,10 +2,10 @@
 0           ! iteration to start from (fresh start 0 otherwise different)
 100000      ! Final time step
 2000        ! Saving frequency
-0.0001      ! dt for the simulation
+0.5         ! dt for the simulation
 1.36        ! density
 0.1666      ! viscosity
-2.5e-4.     ! alphag
+2.5e-4      ! alphag
 1.000       ! pr
 2048        ! lx
 1024        ! ly
