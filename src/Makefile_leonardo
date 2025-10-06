@@ -6,7 +6,7 @@ FFLAGS = -fast -gpu=mem:managed -cuda -acc -cudalib -Mfree -Mpreprocess -mcmodel
 #FFLAGS = -fast -gpu=managed -acc -cudalib -Minfo=accel
 
 # Executable name
-EXEC = mhit36
+EXEC = nemesi
 
 # Source files
 SRCS = module.f90  main.f90 readinput.f90  readwrite.f90 
