@@ -98,13 +98,13 @@ write(*,*) "Initialize velocity, temperature and phase-field"
 ! u velocity
 do i=1,nx
   do j=1,ny
-    u(i,j)= 0.1d0*sin(1.3d0*pi*(x(i)-dx/2))*cos(pi*(y(j)+dy/2))
+    u(i,j)= 0.d0! 0.1d0*sin(1.3d0*pi*(x(i)-dx/2))*cos(pi*(y(j)+dy/2))
   enddo
 enddo
 ! v velocity
 do i=1,nx
   do j=1,ny-1
-    v(i,j)=-0.1d0*cos(pi*(x(i)))*sin(pi*(y(j)-dy/2))
+    v(i,j)=-0.d0 !1d0*cos(pi*(x(i)))*sin(pi*(y(j)-dy/2))
   enddo
 enddo
 ! phase-field
@@ -126,7 +126,7 @@ endif
 do j=2,ny-1
   do i=1,nx
     call random_number(noise)
-    temp(i,j) = 0.5d0 - y(j)/ly + 0.001d0*(2.0d0*noise - 1.0d0)
+    temp(i,j) = 0.5d0 - y(j)/ly + 0.01d0*(2.0d0*noise - 1.0d0)
   enddo
 enddo
 do i=1,nx
@@ -142,6 +142,7 @@ call writefield(tstart,4)
 #endif
 # if tempflag == 1
 call writefield(tstart,5)
+call nucheck(tstart)
 #endif
 !##########################################################
 ! End fields init
@@ -586,6 +587,7 @@ do t=tstart,tfin
     #endif
     #if tempflag == 1
 	  call writefield(t,5)
+    call nucheck(t)
     #endif
   endif
 

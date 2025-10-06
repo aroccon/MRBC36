@@ -25,8 +25,8 @@ OBJS = $(SRCS:.f90=.o)
 
 # Rule to link object files into executable
 $(EXEC): $(OBJS)
-        $(FC) $(FFLAGS) -o $@ $^
+	$(FC) $(FFLAGS) -o $@ $^
 
 # Clean rule
 clean:
-      	rm -f $(OBJS) $(EXEC)
+	rm -f $(OBJS) $(EXEC)

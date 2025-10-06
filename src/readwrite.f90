@@ -187,4 +187,28 @@ end subroutine
 
 
 
+subroutine nucheck(t)
+! log the nussetl number
+use param
+use velocity
+use phase
+use temperature
+implicit none
+integer :: t,fieldn
+character(len=40) :: namefile
 
+! first iteration, create file
+if (t .eq. 0) then
+    open(unit=10, file='output/nu.dat', status='new', action='write')
+    write(10, '(I10, 2F12.6)') t, nut, nub
+    close(10)
+endif
+
+! random iteration, append on file
+if (t .ne. 0) then
+    open(unit=10, file='output/nu.dat', status='old', position='append', action='write')
+    write(10, '(I10, 2F12.6)') t, nut, nub
+    close(10)
+endif
+
+end subroutine
