@@ -372,7 +372,7 @@ do t=tstart,tfin
         rhsv(i,j)=rhsv(i,j)+(h21+h22)*rhoi
         ! add buoyancy term
         #if tempflag == 1
-        rhsv(i,j)=rhsv(i,j) + alphag*0.5d0*(temp(i,j) + temp(i,jm)) !interpolated at v location
+        rhsv(i,j)=rhsv(i,j) + alphag/rho*0.5d0*(temp(i,j) + temp(i,jm)) !interpolated at v location
         #endif
         ! channel pressure driven (along x)
         !rhsu(i,j)=rhsu(i,j) + 1.d0
