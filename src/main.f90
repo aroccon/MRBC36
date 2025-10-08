@@ -536,12 +536,13 @@ do t=tstart,tfin
   !##########################################################
   !$acc kernels
   do i=1,nx
-    ! correct u
+    ! correct u (all inner nodes)
     do j=1,ny
       im=i-1
       if (im < 1) im=nx
       u(i,j)=u(i,j) - dt/rho*(p(i,j)-p(im,j))*dxi
     enddo
+    ! correct v (all inner nodes), no need on the node at the faces (BC)
     do j=2,ny
       jm=j-1
       v(i,j)=v(i,j) - dt/rho*(p(i,j)-p(i,jm))*dyi
@@ -554,14 +555,13 @@ do t=tstart,tfin
   write(*,*) "CFL number:", max(cflx,cfly)
   write(*,*) "Mean nusselt", nut, nub
 
-
   ! re-impose BCs on the flow field
   umax=0.d0
   vmax=0.d0
   !$acc parallel loop collapse(1) reduction(+:umax,vmax)
   do i=1,nx
-    u(i,1)=0.d0
-    u(i,ny)=0.0d0
+    u(i,0)= -u(i,1)
+    u(i,ny+1)= -u(1,ny)
     v(i,1)=0.0d0
     v(i,ny+1)=0.0d0
     do j=2,ny
