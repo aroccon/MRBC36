@@ -4,6 +4,7 @@
 subroutine writefield(t,fieldn)
 ! Output field, file is written in the src/output folder 
 
+use param
 use velocity
 use phase
 use temperature 
@@ -21,7 +22,7 @@ character(len=40) :: namefile
 if (fieldn .eq. 1) then
 write(namefile,'(a,i8.8,a)') './output/u_',t,'.dat'
 open(unit=55,file=namefile,form='unformatted',position='append',access='stream',status='new')
-write(55) u
+write(55) u(:,1:ny)
 close(55)
 endif
 

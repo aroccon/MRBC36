@@ -41,9 +41,9 @@ allocate(kx(nx/2+1))
 allocate(kx2(nx/2+1))
 
 ! velocity variables (defined on cell faces)
-allocate(u(nx,ny),v(nx,ny+1))
-allocate(rhsu(nx,ny),rhsv(nx,ny+1))
-allocate(rhsu_o(nx,ny),rhsv_o(nx,ny+1))
+allocate(u(nx,0:ny+1),v(nx,ny+1))
+allocate(rhsu(nx,0:ny+1),rhsv(nx,ny+1))
+allocate(rhsu_o(nx,0:ny+1),rhsv_o(nx,ny+1))
 allocate(div(nx,ny))
 
 ! tdma variables (separated becasue they have different size)
@@ -54,12 +54,12 @@ allocate(af(nx,0:ny+1),bf(nx,0:ny+1),cf(nx,0:ny+1),df(nx,0:ny+1),solf(nx,0:ny+1)
 
 ! phase-field variables (defined on centers)
 ! add 0:ny+1, i.e. ghost nodes also for phi?
-allocate(phi(nx,ny),rhsphi(nx,ny),psidi(nx,ny))
-allocate(normx(nx,ny),normy(nx,ny))
+allocate(phi(nx,0:ny+1),rhsphi(nx,0:ny+1),psidi(nx,0:ny+1))
+allocate(normx(nx,0:ny+1),normy(nx,0:ny+1))
 allocate(fxst(nx,ny),fyst(nx,ny))
 
 ! temperature variables (defined on centers)
-allocate(temp(nx,ny),rhstemp(nx,ny),rhstemp_o(nx,ny))
+allocate(temp(nx,0:ny+1),rhstemp(nx,0:ny+1),rhstemp_o(nx,0:ny+1))
 !########################################################
 
 
@@ -110,7 +110,7 @@ enddo
 ! phase-field
 if (icphi .eq. 0) then
   do i=1,nx
-    do j=1,ny
+    do j=0,ny+1
       pos=(x(i)-lx/2)**2d0 + (y(j)-ly/2)**2d0
       phi(i,j)=0.5d0*(1.d0-tanh((sqrt(pos)-radius)/(2.d0*eps)))
     enddo
@@ -123,15 +123,16 @@ if (icphi .eq. 1) then
   close(666)
 endif
 ! temperature (internal + boundaries)
-do j=2,ny-1
+do j=1,ny
   do i=1,nx
     call random_number(noise)
     temp(i,j) = 0.5d0 - y(j)/ly + 0.01d0*(2.0d0*noise - 1.0d0)
   enddo
 enddo
+! impose BC on the ghost nodes so to have at cell faces t=t_bc
 do i=1,nx
-  temp(i,ny) = -0.5d0
-  temp(i,1) =   0.5d0
+  temp(i,0) =     2*tbot - temp(i,1)
+  temp(i,ny+1) = -2*ttop - temp(i,ny)
 enddo
 ! output fields
 call writefield(tstart,1)
@@ -168,7 +169,7 @@ do t=tstart,tfin
   gamma=1.0d0*max(umax,vmax)
   write(*,*) "gamma", gamma
   !$acc kernels
-  do j=2,ny-1
+  do j=1,ny
     do i=1,nx
       ip=i+1
       im=i-1
@@ -185,7 +186,7 @@ do t=tstart,tfin
   enddo
 
   ! compute normals from psidi
-  do j=2,ny-1
+  do j=1,ny
     do i=1,nx
       ip=i+1
       im=i-1
@@ -203,7 +204,7 @@ do t=tstart,tfin
   enddo
   ! gamma computed from previous field (after NS)
   do i=1,nx
-    do j=2,ny-1
+    do j=1,ny
       ip=i+1
       im=i-1
       jp=j+1
@@ -216,7 +217,7 @@ do t=tstart,tfin
   enddo
 
   ! phase-field n+1 (Euler explicit)
-  do j=2,ny-1
+  do j=1,ny
     do i=1,nx
       phi(i,j) = phi(i,j)  + dt*rhsphi(i,j);
     enddo
@@ -226,8 +227,8 @@ do t=tstart,tfin
   ! impose BC on the phase-field (no flux at the walls)
   !$acc kernels
   do i=1,nx
-    phi(i,1) = phi(i,2)
-    phi(i,ny) = phi(i,ny-1)
+    phi(i,0) = phi(i,1)
+    phi(i,ny+1) = phi(i,ny)
   enddo
   !$acc end kernels
   #endif
@@ -247,7 +248,7 @@ do t=tstart,tfin
   tempn=temp !tempn is the temperature at time step n (the initial one)
   do stage=1,3
     !$acc kernels
-    do j=2,ny-1
+    do j=1,ny
       do i=1,nx
         ip=i+1
         im=i-1
@@ -274,10 +275,10 @@ do t=tstart,tfin
         rhstemp_o(i,j)=rhstemp(i,j)
       enddo
     enddo
-    ! BC during RK stages
+    ! impose BC during RK stages (impose average between first inner and ghost equal to +/- 0.5d0)
     do i=1,nx
-      temp(i,1) =   0.5d0
-      temp(i,ny) = -0.5d0
+      temp(i,0) =     2*tbot - temp(i,1)
+      temp(i,ny+1) = -2*ttop - temp(i,ny)
     enddo
     !$acc end kernels
   enddo
@@ -288,21 +289,23 @@ do t=tstart,tfin
   !$acc parallel loop gang vector present(af, bf, cf, df, solf)
   do i=1,nx
     ! Build TDMA arrays for interior points only
-    do j=2,ny-1
+    do j=1,ny
       af(i,j) = -lambda
       bf(i,j) =  1.0d0 + 2.0d0*lambda
       cf(i,j) = -lambda
       df(i,j) =  temp(i,j) + lambda*(temp(i,j+1)-2.0d0*temp(i,j) + temp(i,j-1))
     enddo
-    ! Boundary conditions
-    af(i,1)=0.0d0
-    bf(i,1)=1.0d0
-    cf(i,1)=0.0d0
-    df(i,1)=1.0d0  ! bottom hot
-    af(i,ny)=0.0d0
-    bf(i,ny)=1.0d0
-    cf(i,ny)=0.0d0
-    df(i,ny)=0.0d0 ! top cold
+
+    ! Bottom boundary (j=1)
+    af(i,1) = 0.0d0
+    bf(i,1) = 1.0d0 + lambda
+    cf(i,1) = -lambda
+    df(i,1) = temp(i,1) + 2.0d0*lambda*tbot !0.5d0 is the bottom BC
+    ! Top boundary (j=ny)
+    af(i,ny) = -lambda
+    bf(i,ny) = 1.0d0 + lambda
+    cf(i,ny) = 0.0d0
+    df(i,ny) = temp(i,ny) + 2.0d0*lambda*ttop
 
     ! TDMA SOLVER - Forward sweep
     !$acc loop seq
@@ -383,7 +386,7 @@ do t=tstart,tfin
     ! Compute surface tension forces (LCSF mehthod, see Assessment of an energy-based surface tension model for simulation of...)
     #if phiflag == 1
     !$acc kernels
-    do j=2,ny-1
+    do j=1,ny
       do i=1,nx
         ip=i+1
         im=i-1
@@ -400,7 +403,7 @@ do t=tstart,tfin
 
     !$acc kernels
     ! Add surface tension forces to RHS (do not merge with above!)
-    do j=2,ny-1
+    do j=1,ny
       do i=1,nx
         im=i-1
         jm=j-1
@@ -414,7 +417,7 @@ do t=tstart,tfin
 
     ! find u, v and w star (AB2), overwrite u,v and w
     !$acc kernels
-    do j=2,ny-1
+    do j=1,ny
       do i=1,nx
         u(i,j) = u(i,j) + dt*(alpha(stage)*rhsu(i,j) + beta(stage)*rhsu_o(i,j))
         v(i,j) = v(i,j) + dt*(alpha(stage)*rhsv(i,j) + beta(stage)*rhsv_o(i,j))
@@ -427,8 +430,8 @@ do t=tstart,tfin
     !impose BCs on the flow field
     !$acc kernels
     do i=1,nx
-      u(i,1)=0.d0
-      u(i,ny)=0.0d0
+      u(i,0)=.   -u(i,1)
+      u(i,ny+1)= -u(i,ny)
       v(i,1)=0.0d0
       v(i,ny+1)=0.0d0
     enddo
