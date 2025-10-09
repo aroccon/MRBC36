@@ -1,12 +1,13 @@
 module param
-  integer, parameter :: nx=512, ny=256
+  integer, parameter :: nx=256, ny=128
   double precision, parameter :: pi=3.141592653589793d0
   double precision :: dx, dy, lx, ly, acoeff, q, l2norm, err, dyi, factor, twopi
   double precision :: radius, eps, epsi, gamma, rho, mu, dxi, ddxi, ddyi, normod, dt
   double precision :: umax=0.0d0, vmax=0.d0, val, lambda
   double precision :: chempot, curv, sigma, cflx, cfly, ra, pr, nut, nub, num, noise, enum
   double precision :: pos, epsr, times, timef, difftemp, h11, h12, h21, h22, rhoi, alphag
-  integer :: tstart, tfin, restart, dump, icphi, ttop, tbot
+  double precision :: ttop, tbot
+  integer :: tstart, tfin, restart, dump, icphi
 end module param
 
 module velocity

@@ -23,7 +23,7 @@ double precision, parameter ::  beta(3)      = (/ 0.d0,       -17.d0/60.d0,  -5.
 !double precision, parameter ::  alpha(3) = (/ 1.d0,         3.d0/4.d0,    1.d0/3.d0 /) !rk3 ssp coef
 !double precision, parameter ::  beta(3)  = (/ 0.d0,         1.d0/4.d0,    2.d0/3.d0 /) !rk3 ssp coef
 
-#define phiflag 1
+#define phiflag 0
 #define tempflag 1
 #define impdifftemp 0
 
@@ -65,7 +65,7 @@ allocate(temp(nx,0:ny+1),rhstemp(nx,0:ny+1),rhstemp_o(nx,0:ny+1))
 
 ! Compute axis (position of cell centers)
 x(1)=dx/2
-y(1)=0.d0
+y(1)=dy/2
 do i=1,nx-1
   x(i+1)=x(i) + dx
 enddo
@@ -103,14 +103,14 @@ do i=1,nx
 enddo
 ! v velocity
 do i=1,nx
-  do j=1,ny-1
+  do j=1,ny
     v(i,j)=-0.d0 !1d0*cos(pi*(x(i)))*sin(pi*(y(j)-dy/2))
   enddo
 enddo
 ! phase-field
 if (icphi .eq. 0) then
   do i=1,nx
-    do j=0,ny+1
+    do j=1,ny
       pos=(x(i)-lx/2)**2d0 + (y(j)-ly/2)**2d0
       phi(i,j)=0.5d0*(1.d0-tanh((sqrt(pos)-radius)/(2.d0*eps)))
     enddo
@@ -132,7 +132,7 @@ enddo
 ! impose BC on the ghost nodes so to have at cell faces t=t_bc
 do i=1,nx
   temp(i,0) =     2*tbot - temp(i,1)
-  temp(i,ny+1) = -2*ttop - temp(i,ny)
+  temp(i,ny+1) =  2*ttop - temp(i,ny)
 enddo
 ! output fields
 call writefield(tstart,1)
@@ -278,7 +278,7 @@ do t=tstart,tfin
     ! impose BC during RK stages (impose average between first inner and ghost equal to +/- 0.5d0)
     do i=1,nx
       temp(i,0) =     2*tbot - temp(i,1)
-      temp(i,ny+1) = -2*ttop - temp(i,ny)
+      temp(i,ny+1) =  2*ttop - temp(i,ny)
     enddo
     !$acc end kernels
   enddo
@@ -330,8 +330,8 @@ do t=tstart,tfin
   nub=0.0d0
   !$acc parallel loop reduction(+:nut,nub)
   do i=1,nx
-    nut=nut + (temp(i,1)-temp(i,2))*dyi
-    nub=nub + (temp(i,ny-1)-temp(i,ny))*dyi
+    nut=nut + (temp(i,0)-temp(i,1))*dyi
+    nub=nub + (temp(i,ny)-temp(i,ny+1))*dyi
   enddo
   nut=nut/nx*ly
   nub=nub/nx*ly
@@ -350,7 +350,7 @@ do t=tstart,tfin
   ! Advection + diffusion
   do stage=1,3
     !$acc kernels
-    do j=2,ny-1
+    do j=1,ny
       do i=1,nx
         ip=i+1
         im=i-1
@@ -430,7 +430,7 @@ do t=tstart,tfin
     !impose BCs on the flow field
     !$acc kernels
     do i=1,nx
-      u(i,0)=.   -u(i,1)
+      u(i,0)=    -u(i,1)
       u(i,ny+1)= -u(i,ny)
       v(i,1)=0.0d0
       v(i,ny+1)=0.0d0
@@ -553,15 +553,15 @@ do t=tstart,tfin
   cflx=umax*dt*dxi
   cfly=vmax*dt*dyi
   write(*,*) "CFL number:", max(cflx,cfly)
-  write(*,*) "Mean nusselt", nut, nub
+  write(*,*) "Nusselt (top, bottom)", nut, nub
 
   ! re-impose BCs on the flow field
   umax=0.d0
   vmax=0.d0
   !$acc parallel loop collapse(1) reduction(+:umax,vmax)
   do i=1,nx
-    u(i,0)= -u(i,1)
-    u(i,ny+1)= -u(1,ny)
+    u(i,0)=    -u(i,1)
+    u(i,ny+1)= -u(i,ny)
     v(i,1)=0.0d0
     v(i,ny+1)=0.0d0
     do j=2,ny

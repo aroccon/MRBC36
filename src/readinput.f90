@@ -29,11 +29,11 @@ read(55,*) epsr
 
 ! compute pre-defined constant 
 twopi=2.d0*pi 
-difftemp=pr*mu
+difftemp=mu/pr
 !difftemp=sqrt(pr/ra)! sqrt(Ra) with Ra=2e6 
 !mu=sqrt(1.d0/ra) ! sqrt(1/Ra) with Ra=2e6 
-dx = lx/(nx)
-dy = ly/(ny-1)
+dx = lx/nx
+dy = ly/ny
 dxi=1.d0/dx
 ddxi=1.d0/dx/dx
 dyi=1.d0/dy
@@ -42,6 +42,8 @@ rhoi=1.d0/rho
 eps=epsr*min(dx,dy)
 epsi=1.d0/eps
 enum=1.e-16
+tbot=0.5d0
+ttop=-0.5d0
 
 
 write(*,*) "------------------------------------------------------"
